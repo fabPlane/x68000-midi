@@ -1,0 +1,7 @@
+hw/*-backups/
+hw/fp-info-cache
+*.kicad_prl
+__pycache__/
+*.pyc
+build/
+.DS_Store
