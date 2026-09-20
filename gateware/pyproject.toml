@@ -1,0 +1,25 @@
+[project]
+name = "x68kmidi"
+version = "0.0.1"
+description = "Amaranth gateware for the X68000 MIDI card: YM3802-compatible MIDI, 8 MB PSRAM window, 68000 bus slave (Gowin GW1NR-9)"
+readme = "README.md"
+# Toolchain pins mirror ../../../me/vodoo_2/amaranth (chosen 2026-09-20): one
+# known-good Amaranth environment shared by both projects.
+requires-python = ">=3.13,<3.15"
+dependencies = [
+    "amaranth==0.5.10",
+    "amaranth-yosys==0.50.0.0.post128",
+    "cocotb==2.1.0",
+    "pytest==9.1.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["x68kmidi", "gen"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

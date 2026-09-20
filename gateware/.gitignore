@@ -1,0 +1,5 @@
+.venv/
+rtl/
+__pycache__/
+.pytest_cache/
+*.vcd
