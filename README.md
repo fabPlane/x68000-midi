@@ -34,9 +34,11 @@ to the big board, it puts the Tang Console on a real machine, and every later ca
 Ethernet, Mercury-style PCM, SCSI, a bus analyser) prototypes on it. Build it buffered for a 3.3 V
 host, or leave the translators off for a 5 V-tolerant one such as an RP2350.
 
-Its placement is generated too — `hw/layout_breakout.py` (run with KiCad's own Python) writes a
-DRC-clean `build/x68000-breakout.kicad_pcb` with every footprint placed and every pad on its net,
-ready to route.
+It is **placed and routed**: `hw/build_breakout.sh` runs the whole pipeline — place
+(`layout_breakout.py`), pour the planes (`route_breakout.py`), export a Specctra DSN, run
+freerouting, import the session, fill and DRC — with no GUI anywhere, because `pcbnew`'s Python API
+can do the DSN/SES round trip that `kicad-cli` cannot. Result: every signal routed, 1676 tracks,
+200 vias, **0 DRC errors**, with 15 plane stubs left to drop vias on by hand.
 
 Next: route and order the breakout, Tang Console bring-up of the MIDI path over it, PSRAM
 read-latency measurement on a Tang Nano 9K, then the main PCB.

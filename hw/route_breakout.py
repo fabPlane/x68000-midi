@@ -78,6 +78,10 @@ def add_zone(board, net_name, layer, rect):
         outline.Append(mm(x), mm(y))
     zone.SetOutline(outline)
     _KEEPALIVE.append(outline)
+    # Full connection rather than thermal relief: on a plane that exists to
+    # carry a 68000 bus's return current, spokes are a liability, and KiCad
+    # reports starved thermals on the pads where only two fit.
+    zone.SetPadConnection(pcbnew.ZONE_CONNECTION_FULL)
     zone.SetIsFilled(False)
     board.Add(zone)
     return zone
@@ -153,6 +157,11 @@ def stitch_plane_pads(board) -> int:
             # Step out from the pad, away from the footprint's middle, until
             # the via clears every hole and pad already on the board. A fixed
             # 0.9 mm stub lands on a neighbour often enough to matter.
+            # Straight out along the dominant axis, at increasing reach.
+            # Trying eight directions instead was measured and is worse: it
+            # places ~20 more stitch vias but crowds the routing channels
+            # enough to cost 2 DRC violations, and zero errors is worth more
+            # than a handful of pre-made plane connections.
             spot = None
             for reach in (0.9, 1.3, 1.7, 2.2, 2.8):
                 if abs(dx) >= abs(dy):

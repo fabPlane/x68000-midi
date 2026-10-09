@@ -172,6 +172,16 @@ def main() -> int:
 
     board = pcbnew.BOARD()
     board.SetCopperLayerCount(4)
+    # Netclass defaults stay at 0.2 mm track / 0.2 mm clearance / 0.6 mm via,
+    # but the *minimum* has to allow the 0.15 mm escapes an autorouter needs
+    # under a 0.65 mm pitch TSSOP. JLCPCB's standard capability is 0.127 mm,
+    # so 0.15 is comfortably inside spec. The stock minimum clearance of 0 is
+    # also no use to anyone — set it to 0.15 so DRC actually checks.
+    ds = board.GetDesignSettings()
+    ds.m_TrackMinWidth = mm(0.15)
+    ds.m_MinClearance = mm(0.15)
+    ds.m_ViasMinSize = mm(0.45)
+    ds.m_MinThroughDrill = mm(0.25)
 
     nets = {}
     for name in sorted(design.nets):

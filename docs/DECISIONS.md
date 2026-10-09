@@ -211,7 +211,7 @@ remain, which is normal before the reference text is nudged during routing).
 Routing is the next step and is not done. The placement is a starting point, not a fixed plan;
 anything may be moved.
 
-### 2026-10-10 — breakout routing: planes yes, signals no
+### 2026-10-10 — breakout routing: planes yes, signals no (superseded, see below)
 
 What landed: **three copper planes and 64 stitch vias, DRC clean** (0 errors). GND on In1.Cu, +5 V
 and VREF sharing In2.Cu split left/right along the translator column — an 8T245 has its A-side
@@ -238,3 +238,27 @@ Changes the attempt forced, all of them improvements:
 Open: 30 plane pads still have no room for a stitch via (mostly the translators' inner GND pins,
 which the router will reach anyway once there is copper near them), and 172 unconnected items, which
 is the unrouted signal count.
+
+### 2026-10-10 — breakout routed with freerouting
+
+**Every signal net is routed. 0 DRC errors, 1676 tracks, 200 vias.** The 15 remaining unconnected
+items are all plane stubs (GND, +5 V, VREF) that need a via dropping to their pour — a few minutes
+in pcbnew, and no signal is among them.
+
+`hw/build_breakout.sh` runs it end to end and is the reproducible artifact: place, pour, export DSN,
+freeroute, import session, fill, DRC, render. No GUI anywhere — `pcbnew`'s Python API has
+`ExportSpecctraDSN` and `ImportSpecctraSES`, which is the piece `kicad-cli` lacks. Freerouting is the
+local `tensorfleet/freerouting-otel` build; override with `FREEROUTING_JAR`.
+
+Three findings worth keeping:
+
+| Finding | Detail |
+|---|---|
+| **KiCad exports inner copper as *signal* layers** | so freerouting routed across In1 and In2 and cut both pours into islands. The symptom was 34 unconnected items of which **not one was a signal** — all plane fragments. Rewriting the DSN to mark In1.Cu and In2.Cu as `(type power)` keeps the pours whole and halved the count. |
+| **The stock minimum track width blocked the fanout** | the board's 0.2 mm minimum rejected the 0.15 mm escapes an autorouter needs under a 0.65 mm pitch TSSOP: 79 `track_width` errors. JLCPCB's standard capability is 0.127 mm, so the minimum is now 0.15 mm, with netclass defaults left at 0.2/0.2/0.6. The stock minimum *clearance* was 0, which meant DRC was not checking it at all; now 0.15 mm. |
+| **More stitch vias is not better** | letting the placer try eight directions instead of one outward axis placed ~20 more plane vias but crowded the channels enough to cost 2 DRC violations and leave 13 unconnected, against 0 and 15. Zero errors wins; the single-axis version stands. |
+
+Still to do before fab: drop vias on those 15 plane stubs, tidy the silkscreen, and deal with the
+edge-connector footprint's solder-mask bridges — the slivers between 2.54 mm gold fingers are below
+KiCad's default minimum, which is correct for a normal footprint and wrong for an edge connector
+(the finger area should be mask-free). Then gerbers.
