@@ -138,3 +138,28 @@ What survives, and is now the real justification:
 Practical consequence: do not sell this card on "better timing" without hardware evidence. The
 bench claim we can make is narrower and still worth making — synchronised inputs, no asynchronous
 sampling anywhere, and a release path that cannot collide with the next cycle.
+
+## 2026-10-10 — rev A netlist
+
+`hw/netlist.py` is the single source of truth for what connects to what: it emits the KiCad netlist
+for pcbnew, the Gowin `.cst` so the gateware cannot drift from the board, and a review report. Pin
+names for standard parts are read out of the installed KiCad symbol libraries, so naming a pin a
+part does not have is an error rather than a silent mistake, and every footprint is checked to exist.
+66 components, 133 nets, all checks passing.
+
+Changes made while writing it:
+
+| Change | Why |
+|---|---|
+| **USB-C + FT232H deferred to rev B**; rev A has midiori's 2×5 1.27 mm JTAG header | ~20 nets of FT232H supply arrangement that could not be verified from here, plus a crystal and more rails, on a board that is already pin- and plane-constrained. A $5 FT232H breakout on the header does the same job for a run of 5. The 1.8 V JTAG requirement moves to the adapter. |
+| `IDDIR` (slot B30) brought into the FPGA | the motherboard's own data-buffer direction signal; midiori gates its bus drive with it, and it is one spare channel on the control translator |
+| **74AHCT1G34 buffers the data-bus DIR** to 5 V | `DIR`/`~OE` on an SN74LVC8T245 are referenced to `V_CCA`, which is the 5 V slot, so a 3.3 V FPGA output is below their V_IH of 0.7 × 5 V. midiori drives them directly and gets away with it; AHCT has TTL thresholds at 5 V and makes it correct. Address and control translators have `DIR` strapped to +5 V (A→B) and `~OE` to ground, so only the data pair needs the buffer — which also freed the `BUS_OE_N` pin. |
+| MIDI IN sleeve grounded through a 0 R link (R11) | the MIDI spec leaves an IN socket's pin 2 open to stop ground loops, TRS gear usually grounds it; a link makes it a build option |
+| 10 k pull-up on the H11L1 output | it is open collector |
+
+Pin budget as built: **60 of 63 usable user I/O**. Banks 2 and 3 are full, three spare in bank 1.
+Every pin except the clock (63) and JTAG is free to move within its own bank during routing — re-run
+the script afterwards so the `.cst` follows the board.
+
+Still open: the 3.3 V regulator's thermal check, whether MODE0/MODE1 can be reused as I/O after
+configuration if the 1.8 V bank gets tighter, and the layout itself.
