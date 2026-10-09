@@ -107,7 +107,7 @@ def build() -> Design:
 
     slot = dict(SLOT)
     slot.update(EXTRA_SLOT)
-    edge_pins = {f"{s}{n}": f"{s}{n}" for s in "AB" for n in range(1, 51)}
+    edge_pins = {f"{s}{n}": [f"{s}{n}"] for s in "AB" for n in range(1, 51)}
     d.add("J1", "EDGE", "X68000 I/O slot", pins=edge_pins)
     for pad, net in slot.items():
         d.wire(net, "J1", pad)

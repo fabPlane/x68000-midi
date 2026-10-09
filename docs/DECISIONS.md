@@ -210,3 +210,31 @@ remain, which is normal before the reference text is nudged during routing).
 
 Routing is the next step and is not done. The placement is a starting point, not a fixed plan;
 anything may be moved.
+
+### 2026-10-10 — breakout routing: planes yes, signals no
+
+What landed: **three copper planes and 64 stitch vias, DRC clean** (0 errors). GND on In1.Cu, +5 V
+and VREF sharing In2.Cu split left/right along the translator column — an 8T245 has its A-side
+supply on the finger side and its B-side on the header side, so the split falls between them. That
+takes the three largest nets out of the routing problem.
+
+**Signal routing was attempted and abandoned, with numbers.** Drawing a direct segment between each
+pair of pads gave **305 DRC errors**; moving the address translators to the bottom side so the two
+big bundles never share a layer brought it to **266**. The geometry really is three monotonic fans,
+which would be routable that way, but a segment drawn between two pads knows nothing about the pads
+and tracks it crosses, and 48 of them cross a column of ICs. Doing it properly needs obstacle
+avoidance and rip-up. `kicad-cli` has no Specctra exporter, so the route is: open in pcbnew,
+File → Export → Specctra DSN, run freerouting, import the SES. Or route it by hand from here.
+
+Changes the attempt forced, all of them improvements:
+
+| Change | Why |
+|---|---|
+| **Address translators on the bottom side** | the connector's A row is on F.Cu and its B row on B.Cu, so data/control on top and address underneath gives each bundle its own layer. Costs double-sided assembly; worth it. |
+| **Every duplicate supply pin is wired** | `symbol_pins` kept only the first pin of each name, so an 8T245's second V_CCB and its extra GNDs were left floating. Caught as DRC shorts when a plane stub ran into the orphan pad. Pin maps are now name → list. |
+| **Stitch vias step outward until clear** | a fixed 0.9 mm stub lands on a neighbouring pad often enough to matter; the placer now tries 0.9 → 2.8 mm and reports the 30 pads where nothing fits. |
+| Hand placements are checked like automatic ones | an IDC header rotated 90° put 50 mm of connector off the end of the card, and nothing complained. |
+
+Open: 30 plane pads still have no room for a stitch via (mostly the translators' inner GND pins,
+which the router will reach anyway once there is copper near them), and 172 unconnected items, which
+is the unrouted signal count.

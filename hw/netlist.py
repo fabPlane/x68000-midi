@@ -37,8 +37,14 @@ SYMBOLS, FOOTPRINTS = KICAD / "symbols", KICAD / "footprints"
 # Part pin maps
 # --------------------------------------------------------------------------
 
-def symbol_pins(lib: str, name: str) -> dict[str, str]:
-    """{pin name: pin number} from an installed KiCad symbol."""
+def symbol_pins(lib: str, name: str) -> dict[str, list[str]]:
+    """{pin name: [pin numbers]} from an installed KiCad symbol.
+
+    A list, not a single number, because parts repeat names: an SN74LVC8T245
+    has two V_CCB pins and three GND pins, and wiring only the first leaves
+    copper hanging off the others -- which is exactly the kind of mistake that
+    shows up as a DRC short once a plane stub runs into the orphan pad.
+    """
     text = (SYMBOLS / f"{lib}.kicad_sym").read_text()
     start = text.index(f'(symbol "{name}"')
     depth = 0
@@ -55,7 +61,7 @@ def symbol_pins(lib: str, name: str) -> dict[str, str]:
         r'\(pin (\w+) \w+[\s\S]{0,200}?\(name "([^"]*)"[\s\S]{0,80}?\(number "([^"]*)"',
         block,
     ):
-        out.setdefault(m.group(2), m.group(3))
+        out.setdefault(m.group(2), []).append(m.group(3))
     return out
 
 
@@ -91,9 +97,10 @@ HAND_PINS: dict[str, dict[str, str]] = {
 }
 
 
-def part_pins(kind: str) -> dict[str, str]:
+def part_pins(kind: str) -> dict[str, list[str]]:
     if kind in HAND_PINS:
-        return HAND_PINS[kind]
+        return {k: [v] if isinstance(v, str) else v
+                for k, v in HAND_PINS[kind].items()}
     lib, name = KICAD_SYMBOLS[kind]
     return symbol_pins(lib, name)
 
@@ -242,11 +249,14 @@ class Design:
         return ref
 
     def wire(self, net, ref, pin_name):
+        """Wire every pin of that name: duplicates are supply and ground pins
+        and all of them have to be connected."""
         comp = self.comps[ref]
         if pin_name not in comp["pins"]:
             raise SystemExit(f"{ref} ({comp['kind']}) has no pin {pin_name!r}; "
                              f"it has {sorted(comp['pins'])}")
-        self.nets[net].append((ref, comp["pins"][pin_name]))
+        for number in comp["pins"][pin_name]:
+            self.nets[net].append((ref, number))
 
     def decouple(self, ref_prefix, n, net, value="100nF"):
         for i in range(n):
@@ -261,14 +271,14 @@ def build() -> tuple[Design, FpgaPins]:
     fp = FpgaPins()
 
     # ---- edge connector -------------------------------------------------
-    edge_pins = {f"{s}{n}": f"{s}{n}" for s in "AB" for n in range(1, 51)}
+    edge_pins = {f"{s}{n}": [f"{s}{n}"] for s in "AB" for n in range(1, 51)}
     d.add("J1", "EDGE", "X68000 I/O slot", pins=edge_pins)
     for pad, net in SLOT.items():
         d.wire(net, "J1", pad)
 
     # ---- FPGA -----------------------------------------------------------
-    fpga_pins = {r["pin"]: r["pin"] for r in load_fpga_pins()}
-    fpga_pins["EP"] = "89"
+    fpga_pins = {r["pin"]: [r["pin"]] for r in load_fpga_pins()}
+    fpga_pins["EP"] = ["89"]
     d.add("U1", "FPGA", "GW1NR-LV9QN88PC6/I5", lcsc="C5799578", pins=fpga_pins)
     for row in load_fpga_pins():
         name, pin = row["name"], row["pin"]
@@ -486,7 +496,7 @@ def build() -> tuple[Design, FpgaPins]:
         for pin_name, role in SUPPLIES.get(comp["kind"], {}).items():
             if role == "GND":
                 continue
-            number = comp["pins"][pin_name]
+            number = comp["pins"][pin_name][0]
             for net, nodes in d.nets.items():
                 if (ref, number) in nodes and net != "GND":
                     per_net[net] += 1
@@ -525,9 +535,9 @@ def check(d: Design, fp: "FpgaPins | None" = None) -> list[str]:
 
     for ref, comp in sorted(d.comps.items()):
         for pin_name in SUPPLIES.get(comp["kind"], {}):
-            number = comp["pins"][pin_name]
-            if not any((ref, number) in nodes for nodes in d.nets.values()):
-                bad.append(f"{ref} supply pin {pin_name} ({number}) floats")
+            for number in comp["pins"][pin_name]:
+                if not any((ref, number) in nodes for nodes in d.nets.values()):
+                    bad.append(f"{ref} supply pin {pin_name} ({number}) floats")
         lib, fpname = comp["footprint"].split(":")
         roots = (FOOTPRINTS, ROOT / "hw" / "lib")   # KiCad's, then this project's
         if not any((r / f"{lib}.pretty" / f"{fpname}.kicad_mod").exists()

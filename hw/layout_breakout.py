@@ -49,22 +49,36 @@ OUTLINE = [
     (58, 189), (54, 185), (54, 175), (45, 175), (44, 174),
 ]
 
-#: ref -> (x, y, rotation). Chosen by hand; the router may want them moved,
-#: which is fine — this script only has to produce a sane starting point.
+#: ref -> (x, y, rotation, side). Chosen by hand; the router may move things,
+#: which is fine — this only has to be a sane starting point.
+#:
+#: The one decision here that matters: the **address translators go on the
+#: bottom**. The edge connector's A row is on F.Cu and its B row on B.Cu, so
+#: with the data and control parts on top and the address parts underneath,
+#: the two big bundles never share a layer and cannot interfere. That is worth
+#: the cost of double-sided assembly; routed as one-sided it is a weave.
+#: Both columns sit at the same x, because opposite sides do not collide.
 PLACEMENT = {
-    "J1": (50.0, 173.46, 0),          # exactly where midiori puts the fingers
-    # translators, A side toward the fingers
-    "U1": (72.0, 58.0, 0), "U2": (72.0, 80.0, 0), "U3": (72.0, 102.0, 0),
-    "U4": (72.0, 124.0, 0), "U5": (72.0, 146.0, 0), "U6": (72.0, 168.0, 0),
-    "U7": (64.0, 44.0, 0),            # AHCT direction buffer
-    "U8": (90.0, 46.0, 0), "U9": (90.0, 52.0, 0),      # open-drain returns
-    "U10": (64.0, 182.0, 0),          # local 3.3 V LDO (DNP)
-    "JP1": (72.0, 182.0, 0),
-    "F1": (58.0, 182.0, 90),
+    "J1": (50.0, 173.46, 0, "F"),     # exactly where midiori puts the fingers
+    # data and control, top side, at the centre of gravity of their fingers
+    "U1": (70.0, 156.0, 0, "F"),      # SD0-7   <- A4-A12
+    "U2": (70.0, 134.0, 0, "F"),      # SD8-15  <- A13-A20
+    "U6": (70.0, 95.0, 0, "F"),       # strobes <- A27-A30, A37, B30, B44/45
+    # address, bottom side, under the others
+    "U3": (70.0, 152.0, 0, "B"),      # SA1-8   <- B5-B13
+    "U4": (70.0, 129.0, 0, "B"),      # SA9-16  <- B14-B22
+    "U5": (70.0, 107.0, 0, "B"),      # SA17-23 <- B23-B29, CLK10M <- B2
+    "U7": (60.0, 146.0, 0, "F"),      # AHCT direction buffer
+    "U8": (62.0, 70.0, 0, "F"),       # open-drain returns, near B42-B45
+    "U9": (62.0, 62.0, 0, "F"),
+    "U10": (66.0, 176.0, 0, "F"),     # local 3.3 V LDO (DNP)
+    "JP1": (70.0, 182.0, 0, "F"),
+    "F1": (59.0, 182.0, 90, "F"),
     # Ribbons. This footprint's origin is pad 1 and its 20 rows run +Y from
-    # there, so rotation 0 already has the long axis down the card.
-    "J2": (98.0, 48.0, 0),
-    "J3": (98.0, 112.0, 0),
+    # there, so rotation 0 already has the long axis down the card. They are
+    # through-hole, so either side can reach them.
+    "J2": (96.0, 48.0, 0, "F"),
+    "J3": (96.0, 112.0, 0, "F"),
 }
 
 #: Everything not named above is placed by first fit: candidate points on a
@@ -113,7 +127,7 @@ def anchor_of(design, ref: str) -> tuple[float, float]:
             continue
         for other, _ in nodes:
             if other in PLACEMENT:
-                x, y, _ = PLACEMENT[other]
+                x, y = PLACEMENT[other][0], PLACEMENT[other][1]
                 return x - 8.0, y
     return (RIGHT - 10.0, 180.0)
 
@@ -146,7 +160,7 @@ def first_fit(fp, anchor, taken) -> tuple[float, float] | None:
         box = bbox_mm(fp)
         if box[0] < x0 or box[1] < y0 or box[2] > x1 or box[3] > y1:
             continue
-        if any(overlaps(box, t) for t in taken):
+        if any(overlaps(box, t) for t, side in taken if side == "F"):
             continue
         return x, y
     return None
@@ -184,16 +198,21 @@ def main() -> int:
         fp.Reference().SetTextThickness(mm(0.12))
         fp.Value().SetVisible(False)
         if ref in PLACEMENT:
-            x, y, rot = PLACEMENT[ref]
+            x, y, rot, side = PLACEMENT[ref]
             fp.SetOrientationDegrees(rot)
             fp.SetPosition(point(x, y))
         else:
+            side = "F"
             fp.SetOrientationDegrees(0)
             spot = first_fit(fp, anchor_of(design, ref), taken)
             if spot is None:
                 unplaced.append(ref)
                 continue
             fp.SetPosition(point(*spot))
+        # Flipping only works once the footprint belongs to a board.
+        board.Add(fp)
+        if side == "B":
+            fp.SetLayerAndFlip(pcbnew.B_Cu)
         box = bbox_mm(fp)
         # Hand-placed parts get the same scrutiny as the auto-placed ones:
         # it is far too easy to rotate a 50 mm header off the end of a card.
@@ -201,9 +220,9 @@ def main() -> int:
             x0, y0, x1, y1 = FREE_AREA
             if box[0] < x0 or box[1] < y0 or box[2] > x1 or box[3] > y1:
                 off_board.append(f"{ref} {tuple(round(v, 1) for v in box)}")
-            if any(overlaps(box, t) for t in taken):
+            if any(overlaps(box, t) for t, s in taken if s == side):
                 collisions.append(ref)
-        taken.append(box)
+        taken.append((box, side))
         if comp["dnp"]:
             fp.SetDNP(True)
         for pad in fp.Pads():
@@ -214,7 +233,6 @@ def main() -> int:
         for (r, p) in pad_net:
             if r == ref and p not in have:
                 missing_pads.append(f"{ref} pad {p}")
-        board.Add(fp)
 
     draw_outline(board)
 
