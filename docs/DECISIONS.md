@@ -188,3 +188,25 @@ the only route for a 68000 bus.
 Console would work — just slower than the production PSRAM. For proving the logic (IPL sizing,
 `switch.x`, a RAM disk) use the 138K's ~765 KB of BSRAM for a 512 KB window with zero latency, and
 leave the real timing number to the Nano 9K's PSRAM, which is the part that ships.
+
+### 2026-10-10 — breakout placement
+
+`hw/layout_breakout.py` builds `build/x68000-breakout.kicad_pcb` through KiCad's own `pcbnew`
+Python API (10.0.4), so the file is valid by construction rather than hand-written S-expressions.
+40 footprints, 117 nets, 76 × 150 mm, 4 layers, **DRC clean of errors** (48 silkscreen warnings
+remain, which is normal before the reference text is nudged during routing).
+
+* The finger-end geometry is copied from midiori's board — tab x 44–54, y 47–175 with 1 mm lead-in
+  chamfers, steps out to x 58, body y 39–189. Only the depth is ours: 76 mm instead of 141 mm.
+* Placement follows the signal flow: fingers, a column of six translators with their A side facing
+  the fingers, then the two ribbon headers. Everything is on the top layer so the board assembles
+  single-sided; the B-row fingers (the address bus) via up.
+* Small parts are placed by first fit — 1 mm grid, nearest their anchor, first position that does
+  not overlap. Crude, but the DRC run is the test.
+* Two bugs the checks caught and a reader would not have: the first cap placement stacked parts on
+  top of each other (36 shorting pads, 64 courtyard overlaps), and the IDC header footprint is
+  natively long in Y, so rotating it 90° threw 50 mm of connector off the end of the card. Hand
+  placements are now checked against the board rectangle exactly like the automatic ones.
+
+Routing is the next step and is not done. The placement is a starting point, not a fixed plan;
+anything may be moved.

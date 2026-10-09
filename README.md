@@ -34,7 +34,11 @@ to the big board, it puts the Tang Console on a real machine, and every later ca
 Ethernet, Mercury-style PCM, SCSI, a bus analyser) prototypes on it. Build it buffered for a 3.3 V
 host, or leave the translators off for a 5 V-tolerant one such as an RP2350.
 
-Next: lay out and order the breakout, Tang Console bring-up of the MIDI path over it, PSRAM
+Its placement is generated too — `hw/layout_breakout.py` (run with KiCad's own Python) writes a
+DRC-clean `build/x68000-breakout.kicad_pcb` with every footprint placed and every pad on its net,
+ready to route.
+
+Next: route and order the breakout, Tang Console bring-up of the MIDI path over it, PSRAM
 read-latency measurement on a Tang Nano 9K, then the main PCB.
 
 ## Licence
