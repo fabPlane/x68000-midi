@@ -8,7 +8,8 @@ Design brief and decisions: [midi_box/docs/x68000-midi.html](../midi_box/docs/x6
 
 | Path | What |
 |---|---|
-| `hw/` | [`netlist.py`](hw/netlist.py) — generates the rev A netlist, the Gowin `.cst` and a review report · KiCad layout (rev A, not started) · `hw/lib/x68k.pretty` — the X68000 2 × 50 edge-connector footprint, from midiori · `gw1nr9_qn88p_pins.csv` — the FPGA's pin/bank table, extracted from Gowin UG803 |
+| `hw/` | [`netlist.py`](hw/netlist.py) — rev A netlist, Gowin `.cst`, review report · [`breakout.py`](hw/breakout.py) — the universal slot breakout · KiCad layout (not started) |
+| `mech/` | [`plate.py`](mech/plate.py) — the 176 × 20 × 2 mm slot cover plate · `hw/lib/x68k.pretty` — the X68000 2 × 50 edge-connector footprint, from midiori · `gw1nr9_qn88p_pins.csv` — the FPGA's pin/bank table, extracted from Gowin UG803 |
 | `gateware/` | Amaranth: 68000 bus slave, YM3802 register file and transmitter, two-port card, a 68000 bus master for measuring, and a midiori reference model. 48 tests. PSRAM window to come |
 | `mech/` | slot cover plate 176 × 20 × 2 mm (midiori's TRS plate, to be re-cut for 3–4 jacks) and the card-pull tool |
 | `docs/` | [HARDWARE.md](docs/HARDWARE.md) — rev A specification · X68000 expansion-slot pinout · [DECISIONS.md](docs/DECISIONS.md) |
@@ -26,8 +27,15 @@ checks passing — 66 components, 133 nets, 60 of 63 usable FPGA I/O. [docs/HARD
 what it forces, the pin budget (45 of 48 at 3.3 V, 15 of 15 at 1.8 V), rails, BOM and fab notes.
 Placement and routing have not been started and are the critical path; the netlist is their input.
 
-Next: Tang Console bring-up of the MIDI path, a slot breakout to put it on a real machine, PSRAM
-read-latency measurement on a Tang Nano 9K, then the PCB.
+**Slot breakout** (`python3 hw/breakout.py`): a dumb, universal card — the 2 × 50 fingers, six
+translators and two 2 × 20 IDC headers, 37 components and 117 nets, all checks passing. It is the
+cheap way to prove the edge-finger footprint, the 45° bevel and the card-guide fit before committing
+to the big board, it puts the Tang Console on a real machine, and every later card (RAM, NE2000
+Ethernet, Mercury-style PCM, SCSI, a bus analyser) prototypes on it. Build it buffered for a 3.3 V
+host, or leave the translators off for a 5 V-tolerant one such as an RP2350.
+
+Next: lay out and order the breakout, Tang Console bring-up of the MIDI path over it, PSRAM
+read-latency measurement on a Tang Nano 9K, then the main PCB.
 
 ## Licence
 

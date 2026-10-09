@@ -163,3 +163,28 @@ the script afterwards so the `.cst` follows the board.
 
 Still open: the 3.3 V regulator's thermal check, whether MODE0/MODE1 can be reused as I/O after
 configuration if the 1.8 V bank gets tighter, and the layout itself.
+
+## 2026-10-10 — slot breakout
+
+`hw/breakout.py`: the 2 × 50 fingers, six SN74LVC8T245, a 74AHCT1G34 for the data direction, two
+74LVC2G07 for the open-drain returns, and two 2 × 20 IDC headers. 37 components, 117 nets, checks
+passing. Reuses `netlist.py` wholesale, so the slot pin map and the part pin maps cannot diverge
+between the two boards.
+
+* **VREF from the host** on pin 1 of both headers sets the translators' B side, so the board matches
+  whatever is plugged in. The Tang Console is 3.3 V and Sipeed warn 5 V on its headers destroys it.
+  A local 3.3 V LDO (U10) and link (JP1) are fitted as DNP for a host that cannot source VREF.
+* **Passive build**: leave the translators off and bridge the pairs, for a 5 V-tolerant RP2350 —
+  option C from the original brief, now buildable on the same PCB.
+* 28 signals per header, grounds every fifth pin plus the pair at the end. J2 carries everything a
+  bus cycle needs, J3 the address bus and the bus-master spares, so a simple card ignores J3's tail.
+* `~BGACK`, `~EXBERR` and `~EXNMI` get scope pads rather than header pins.
+
+**Not connectable by PCIe.** The Tang Console's 16-pin FFC is an RPi-5-style PCIe lane on the
+GW5AST's high-speed transceivers, not parallel I/O; the two 2 × 20 headers (~76 GPIO at 3.3 V) are
+the only route for a 68000 bus.
+
+**On RAM timing over the ribbon:** slow RAM costs wait states, not correctness, so DDR3 on the
+Console would work — just slower than the production PSRAM. For proving the logic (IPL sizing,
+`switch.x`, a RAM disk) use the 138K's ~765 KB of BSRAM for a 512 KB window with zero latency, and
+leave the real timing number to the Nano 9K's PSRAM, which is the part that ships.

@@ -84,6 +84,8 @@ HAND_PINS: dict[str, dict[str, str]] = {
     "H11L1": {"LED_A": "1", "LED_K": "2", "NC": "3", "OUT": "4", "GND": "5",
               "VCC": "6"},
     # 2x5 1.27 mm, ARM-Cortex order, used as plain JTAG like midiori's.
+    "IDC40": {f"p{n}": str(n) for n in range(1, 41)},
+    "TP": {"1": "1"},
     "JTAG": {"VREF": "1", "TMS": "2", "GND1": "3", "TCK": "4", "GND2": "5",
              "TDO": "6", "KEY": "7", "TDI": "8", "GND3": "9", "RESET": "10"},
 }
@@ -118,6 +120,8 @@ FOOTPRINT = {
     "R": "Resistor_SMD:R_0603_1608Metric",
     "C": "Capacitor_SMD:C_0603_1608Metric",
     "EDGE": "x68k:x68000_expansion",
+    "IDC40": "Connector_IDC:IDC-Header_2x20_P2.54mm_Vertical",
+    "TP": "TestPoint:TestPoint_Pad_D1.0mm",
 }
 
 #: Supply pin names per part kind, and what they must be tied to.
@@ -499,7 +503,8 @@ def build() -> tuple[Design, FpgaPins]:
 # Checks and output
 # --------------------------------------------------------------------------
 
-def check(d: Design, fp: FpgaPins) -> list[str]:
+def check(d: Design, fp: "FpgaPins | None" = None) -> list[str]:
+    """Everything that can be verified without opening a schematic editor."""
     bad = []
 
     for net, nodes in sorted(d.nets.items()):
@@ -510,7 +515,7 @@ def check(d: Design, fp: FpgaPins) -> list[str]:
         if pad not in SLOT and pad not in SLOT_NC:
             bad.append(f"slot pad {pad} is neither connected nor listed as NC")
 
-    for net, (pin, bank) in sorted(fp.assigned.items()):
+    for net, (pin, bank) in sorted(fp.assigned.items() if fp else []):
         row = fp.by_pin.get(pin)
         if row is None or not row["name"].startswith("IO"):
             bad.append(f"{net} -> pin {pin} is not a user I/O")
