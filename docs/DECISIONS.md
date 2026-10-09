@@ -53,3 +53,40 @@ A photo of a **XM-6BE10 + midiori** (えくしみえむ, [BOOTH](https://booth.p
 | 6 level shifters | consider **3** | The XM-6BE10 batch from 2025-10-18 halved them — pre-decode outside the FPGA. |
 
 Buy-vs-build: a second-hand XM-6BE10 + midiori (¥26,000–70,500 at auction) is the fast path to a working machine. Ours stays worth building for TRS-A, PSRAM instead of ten SRAMs, overclock margin and an open design — not to save money.
+
+## 2026-10-09 — bus timing is the design goal
+
+Read of `reference/midiori/gateware/midiori.py` (the `#register io state machine` FSM) against the
+68000 slot cycle. midiori's weakness is architectural, not Lattice-vs-Gowin:
+
+- The whole design runs at **16 MHz** (`UART(..., 16000000, 31250)`, `default_clk_period = 1e9/16e6`).
+  The bus FSM therefore sees the slot with **62.5 ns granularity**.
+- `~AS`, `~LDS`, `R/~W`, `~IACK` and A1–A23 go **straight into the FSM with no synchronisers**.
+- `IDLE → RDATA/WDATA` needs `~AS` still low at an internal clock edge. A 25 MHz 68030 cycle holds
+  `~AS` low for ~80 ns ≈ 1.3 internal clocks, so a cycle can be **missed entirely**; a write can reach
+  `WDATA` after the data has gone.
+- In `RDATA`, `_dtready` and the read-data mux assert **in the same state**, so the data crosses a wide
+  combinational `register_num` tree plus a translator while the CPU is already counting down to its
+  latch edge (one bus clock: 100 ns at 10 MHz, **40 ns at 25 MHz**).
+- `RDATA` exits only when `~AS == 1` is sampled on a 16 MHz edge, so the card can keep driving the data
+  bus up to 62.5 ns into the **next** cycle.
+
+Rules for our bus slave, in priority order:
+
+1. **Fast sample domain.** PLL the 27 MHz oscillator to **108 MHz** (4×) for the bus front end — 9.26 ns
+   granularity, ~7× midiori's. The YM3802 and UART stay on a slow clock (27 MHz / 864 = 31 250 exactly).
+2. **Honest `~DTACK`.** Assert it only after the read data is registered in the IOB and the output enable
+   is on — never in the same cycle as the mux. Late DTACK costs a wait state; early DTACK corrupts.
+3. **Registered read data.** Decode the register value continuously from the (long-stable) address and
+   register it; at access time the path is FF → IOB → translator only.
+4. **Asynchronous release.** Gate the data-bus OE combinationally off `~AS` high, not off a clocked state
+   exit, so the card is off the bus at any CPU speed.
+5. **2-FF synchronisers** on every asynchronous control input; at 108 MHz they cost 18.5 ns.
+6. The RAM path is allowed to be slow — PSRAM random read plus refresh collisions will need wait states,
+   and with honest DTACK that is correct rather than broken. XM-6BE10's async SRAM will beat us on raw
+   RAM latency; we trade that for one chip and for working when the machine is clocked up.
+
+**Measurement, not hope:** program the Tang Console 138K as a parameterised **68000 bus master** —
+generate read/write/IACK cycles with 10 / 16 / 25 / 33 MHz timing, sweep the DTACK-and-data window, and
+find where the card actually fails. That characterises overclock margin on the bench without owning an
+overclocked X68000, and it is the same rig the slot breakout needs.

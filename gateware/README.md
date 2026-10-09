@@ -23,7 +23,8 @@ make rtl-module MOD=UartTx PARAMS="clk_freq=27000000"   # -> rtl/UartTx.v
 |---|---|---|
 | `x68kmidi.uart.UartTx` | ported, tested (8N1 timing at 27 MHz) | midiori `UART` |
 | YM3802 transmit FIFO + ITX (active-sensing 0xFE) wrapper | next | midiori `Midiori` |
-| 68000 bus slave, register file, IRQ vector | next | midiori `Midiori` |
+| 68000 bus slave, register file, IRQ vector | next | midiori `Midiori`, re-architected: 108 MHz sample domain, synchronised inputs, honest `~DTACK`, registered read data, async bus release — see `docs/DECISIONS.md` 2026-10-09 |
+| `BusMaster68k` — parameterised cycle generator for the Console, to measure margin at 10/16/25/33 MHz | next | new |
 | PSRAM window | later | zf3/psram-tang-nano-9k (Verilog `Instance`) |
 | YM3802 receive side | last | new |
 
