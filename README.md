@@ -8,15 +8,24 @@ Design brief and decisions: [midi_box/docs/x68000-midi.html](../midi_box/docs/x6
 
 | Path | What |
 |---|---|
-| `hw/` | KiCad project (rev A, to come) · `hw/lib/x68k.pretty` — the X68000 2 × 50 edge-connector footprint and the mini-DIN, from midiori |
-| `gateware/` | Amaranth port of midiori's YM3802 transmit core for the Gowin GW1NR-9, plus the PSRAM window (to come) |
+| `hw/` | KiCad project (rev A, not started) · `hw/lib/x68k.pretty` — the X68000 2 × 50 edge-connector footprint, from midiori · `gw1nr9_qn88p_pins.csv` — the FPGA's pin/bank table, extracted from Gowin UG803 |
+| `gateware/` | Amaranth: 68000 bus slave, YM3802 register file and transmitter, two-port card, a 68000 bus master for measuring, and a midiori reference model. 48 tests. PSRAM window to come |
 | `mech/` | slot cover plate 176 × 20 × 2 mm (midiori's TRS plate, to be re-cut for 3–4 jacks) and the card-pull tool |
-| `docs/` | X68000 expansion-slot pinout; decisions |
+| `docs/` | [HARDWARE.md](docs/HARDWARE.md) — rev A specification · X68000 expansion-slot pinout · [DECISIONS.md](docs/DECISIONS.md) |
 | `reference/midiori/` | verbatim copy of [tdaede/midiori](https://github.com/tdaede/midiori) at 67ee286 (2026-09-11), CC0 — the board and gateware this card starts from |
 
 ## Status
 
-Rev A not yet drawn. Next: Tang Nano 9K bring-up of the transmit core, then PSRAM read-latency measurement, then the PCB.
+**Gateware**: the MIDI half is done and tested end to end — real 68000 bus cycles in, decoded MIDI
+bytes out, including the driver probe sequence and an interrupt-acknowledge vector read. 48 pysim
+tests. The PSRAM window is the remaining block.
+
+**Hardware**: [docs/HARDWARE.md](docs/HARDWARE.md) specifies rev A — the 1.8 V bank-3 constraint and
+what it forces, the pin budget (45 of 48 at 3.3 V, 15 of 15 at 1.8 V), rails, BOM and fab notes.
+Schematic capture and layout have not been started and are the critical path.
+
+Next: Tang Console bring-up of the MIDI path, a slot breakout to put it on a real machine, PSRAM
+read-latency measurement on a Tang Nano 9K, then the PCB.
 
 ## Licence
 
