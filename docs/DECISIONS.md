@@ -108,3 +108,33 @@ the way to make the comparison a measurement rather than an argument.
 Tuning knob if the latency ever matters: 2 of the 6 clocks are the input synchronisers. Driving the
 data bus speculatively off the raw `~AS` and using the synchronised copy only for `~DTACK` would cut
 it to ~3 clocks, at the cost of a deliberate metastability argument. Not done; not needed yet.
+
+### 2026-10-10 — the reference model, and a correction
+
+`gateware/x68kmidi/midiori_ref.py` ports midiori's bus FSM faithfully (own 16 MHz domain, no
+synchronisers, DTACK asserted in the same state as the read-data mux, release only on a clock edge)
+so the comparison is a measurement. `tools/compare.py` runs both on the same rig at every phase of
+the two clocks; the table is in `gateware/README.md`.
+
+**The result does not support the strong form of the 2026-10-09 claim.** In simulation the midiori
+architecture is correct at every phase up to 18 MHz emulated, ties our zero-wait-state ceiling at
+18 MHz, and only degrades at 27 MHz (25 of 27 phases) and 54 MHz (none). Adding 27.8 ns of
+data-path delay does not break it either. The reason is the 68000 itself: a late `~DTACK` only buys
+wait states, and the cycle leaves a full bus clock between sampling `~DTACK` and latching the data,
+which absorbs a slow mux. So "midiori misses cycles on a fast machine" is wrong as stated — our
+rules 1-4 buy margin the bus largely provides anyway.
+
+What survives, and is now the real justification:
+
+- **Rule 5 (synchronisers) is the one that matters.** midiori feeds unsynchronised `~AS`, `~LDS` and
+  23 address lines into its FSM. Simulation resolves that cleanly every time; hardware does not, and
+  the failure it produces — rare, random, worse as edge density rises — is exactly the shape of the
+  reported "weak clock-up resistance". It is also the one thing the rig cannot score.
+- **Rule 1 (108 MHz) is what makes rule 5 affordable**: two synchroniser stages cost 18.5 ns there
+  and 125 ns at midiori's 16 MHz, which would be a real penalty.
+- Rules 2-4 remain cheap correctness insurance, and show up at the extremes (54 MHz emulated) rather
+  than on any real machine.
+
+Practical consequence: do not sell this card on "better timing" without hardware evidence. The
+bench claim we can make is narrower and still worth making — synchronised inputs, no asynchronous
+sampling anywhere, and a release path that cannot collide with the next cycle.

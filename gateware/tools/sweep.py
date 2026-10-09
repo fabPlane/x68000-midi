@@ -17,10 +17,8 @@ import sys
 
 from amaranth.sim import Simulator
 
-sys.path.insert(0, "tests")
-from test_bus import Harness, run_cycle, slot_addr  # noqa: E402
-
-from x68kmidi.bus import MIDI_BASE  # noqa: E402
+from x68kmidi.bus import MIDI_BASE
+from x68kmidi.sim_harness import Harness, run_cycle, slot_addr
 
 S_LENS = [8, 5, 4, 3, 2, 1]
 

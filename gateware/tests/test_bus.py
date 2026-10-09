@@ -3,101 +3,17 @@
 The interesting test is ``test_every_speed``: the same slave has to answer
 correctly with the emulated CPU clock swept from slow to absurd. midiori's
 equivalent logic misses cycles once ``~AS`` is low for less than about two of
-its internal clocks, which is what "weak clock-up resistance" means on the box.
+its internal clocks, which is what "weak clock-up resistance" means on the box
+-- see ``test_midiori_ref.py``, where that is measured rather than asserted.
 """
 
 import pytest
-from amaranth import Array, Elaboratable, Module, Mux, Signal
 from amaranth.sim import Simulator
 
 from x68kmidi.bus import MIDI_BASE, BusSlave68k
-from x68kmidi.busmaster import BusMaster68k
+from x68kmidi.sim_harness import N_REGS, Harness, run_cycle, slot_addr
 
 CLK = 108e6
-N_REGS = 8
-
-
-def slot_addr(byte_addr: int) -> int:
-    """Byte address -> the A1..A23 value the slot carries."""
-    return byte_addr >> 1
-
-
-class Harness(Elaboratable):
-    """Master and slave wired together over a shared, undriven-high data bus,
-    with a trivial register file behind the slave."""
-
-    def __init__(self, base: int = MIDI_BASE):
-        self.master = BusMaster68k()
-        self.slave = BusSlave68k(base)
-        self.regs = Array([Signal(8, name=f"reg{i}") for i in range(N_REGS)])
-        self.contention = Signal()
-        self.re_count = Signal(8)
-        self.we_count = Signal(8)
-
-    def elaborate(self, platform):
-        m = Module()
-        m.submodules.master = ma = self.master
-        m.submodules.slave = sl = self.slave
-
-        m.d.comb += [
-            sl.as_n.eq(ma.as_n),
-            sl.lds_n.eq(ma.lds_n),
-            sl.rw.eq(ma.rw),
-            sl.iack_n.eq(ma.iack_n),
-            sl.addr.eq(ma.addr),
-            ma.dtack_n.eq(sl.dtack_n),
-        ]
-
-        bus = Signal(8)
-        m.d.comb += [
-            bus.eq(Mux(ma.data_oe, ma.data_o, Mux(sl.data_oe, sl.data_o, 0xFF))),
-            ma.data_i.eq(bus),
-            sl.data_i.eq(bus),
-            self.contention.eq(ma.data_oe & sl.data_oe),
-            sl.rdata.eq(self.regs[sl.reg_addr]),
-        ]
-        with m.If(sl.we):
-            m.d.sync += [self.regs[sl.reg_addr].eq(sl.wdata),
-                         self.we_count.eq(self.we_count + 1)]
-        with m.If(sl.re):
-            m.d.sync += self.re_count.eq(self.re_count + 1)
-        return m
-
-
-async def run_cycle(ctx, h, *, addr, read=True, data=0, iack=False,
-                    s_len=5, max_wait=1000, watch=None):
-    """Drive one bus cycle and return what the master observed."""
-    ma = h.master
-    ctx.set(ma.s_len, s_len)
-    ctx.set(ma.max_wait, max_wait)
-    ctx.set(ma.addr_in, addr)
-    ctx.set(ma.rw_in, 1 if read else 0)
-    ctx.set(ma.wdata_in, data)
-    ctx.set(ma.iack_in, 1 if iack else 0)
-    # Hold `start` until the master leaves IDLE: a single-tick pulse can land
-    # while the previous cycle is still retiring and be missed entirely.
-    ctx.set(ma.start, 1)
-    await ctx.tick()
-    while not ctx.get(ma.busy):
-        await ctx.tick()
-    ctx.set(ma.start, 0)
-
-    for _ in range(10_000):
-        if watch is not None:
-            watch.append(ctx.get(h.contention))
-        if ctx.get(ma.done):
-            break
-        await ctx.tick()
-    else:
-        raise AssertionError("cycle never finished")
-    await ctx.tick()   # let the master settle back into IDLE
-
-    return {
-        "rdata": ctx.get(ma.rdata),
-        "timeout": ctx.get(ma.timeout),
-        "dtack_clocks": ctx.get(ma.dtack_clocks),
-        "wait_states": ctx.get(ma.wait_states),
-    }
 
 
 def simulate(body, base=MIDI_BASE):

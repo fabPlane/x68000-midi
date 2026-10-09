@@ -24,6 +24,8 @@ make rtl-module MOD=UartTx PARAMS="clk_freq=27000000"   # -> rtl/UartTx.v
 | `x68kmidi.uart.UartTx` | ported, tested (8N1 timing at 27 MHz) | midiori `UART` |
 | `x68kmidi.bus.BusSlave68k` | written, tested | midiori's register FSM, re-architected to the six rules |
 | `x68kmidi.busmaster.BusMaster68k` | written, tested | new — the measuring instrument |
+| `x68kmidi.midiori_ref.MidioriBusSlave` | written, tested | faithful port of midiori's bus FSM, for comparison |
+| `x68kmidi.sim_harness` | — | master + slave + register file, slave swappable |
 | YM3802 transmit FIFO + ITX (active-sensing 0xFE) wrapper | next | midiori `Midiori` |
 | YM3802 register file behind the slave (the real one, not the test stub) | next | midiori `Midiori` |
 | PSRAM window | later | zf3/psram-tang-nano-9k (Verilog `Instance`) |
@@ -59,6 +61,33 @@ asks, so going faster buys wait states rather than failures. At 135 MHz the same
 44.4 ns. Simulation contains no translator, IOB or PCB delay — add roughly 10–15 ns before
 comparing with a CPU's DTACK window.
 
-**Not yet measured:** midiori's own FSM on the same rig. Porting it as a reference model would turn
-"we are better" from an argument into a number; until then the claim rests on the code read in
-`docs/DECISIONS.md`.
+## Head to head
+
+`uv run --project gateware python -m tools.compare [master_mhz] [dtack_delay_clk] [data_delay_clk]`
+runs ours and the midiori reference model (its own 16 MHz domain, no synchronisers, DTACK with the
+data, clocked release) on the same rig, at every phase of the two clocks:
+
+```
+ emulated CPU |   ours: ok  wait  clash |   midiori: ok      wait  clash
+------------------------------------------------------------------------
+       6.8 MHz |      1/1     0      0 |        27/27     1      0
+      10.8 MHz |      1/1     1      0 |        27/27     1      0
+      13.5 MHz |      1/1     1      0 |        27/27     1      0
+      18.0 MHz |      1/1     1      0 |        27/27     1      0
+      27.0 MHz |      1/1     1      0 |        25/27     1      0
+      54.0 MHz |      1/1     2      0 |         0/27     3      0
+
+fastest zero-wait-state read: ours 18.0 MHz, midiori model 18.0 MHz
+```
+
+Read this honestly: the reference model is **fine at every speed a real X68000 runs**, and the
+zero-wait ceiling is a tie. Adding up to 27.8 ns of data-path delay does not change it either,
+because a 68000 leaves a full bus clock between sampling `~DTACK` and latching the data, and a late
+`~DTACK` just buys wait states. Our measured advantage is only at the extremes (27 MHz emulated,
+where the model drops 2 phases in 27, and 54 MHz, where it dies).
+
+The gap between that and the field reports of "weak clock-up resistance" is the part simulation
+cannot score: **metastability**. midiori feeds unsynchronised `~AS`, `~LDS` and 23 address lines
+straight into its FSM, and a simulator resolves those cleanly every time. That is the rule our
+design actually earns its keep on; the 108 MHz domain is mostly what makes paying for synchronisers
+affordable. See `docs/DECISIONS.md` 2026-10-10.
