@@ -90,3 +90,21 @@ Rules for our bus slave, in priority order:
 generate read/write/IACK cycles with 10 / 16 / 25 / 33 MHz timing, sweep the DTACK-and-data window, and
 find where the card actually fails. That characterises overclock margin on the bench without owning an
 overclocked X68000, and it is the same rig the slot breakout needs.
+
+### 2026-10-10 — first silicon-free numbers
+
+`gateware/x68kmidi/bus.py` (slave) and `gateware/x68kmidi/busmaster.py` (instrument) are written and
+tested; 22 pysim tests pass. The sweep (`tools/sweep.py`, table in `gateware/README.md`) gives a
+**constant 6-clock DTACK latency — 55.6 ns at 108 MHz, 44.4 ns at 135 MHz — independent of CPU
+speed**, correct reads, writes and IACK vectors from 6.8 MHz to 54 MHz emulated, no bus contention,
+and wait states appearing (1 at 27 MHz, 2 at 54 MHz) instead of failures. That is the whole design
+goal: being slow is allowed, being early or absent is not.
+
+Honest limits: simulation has no translator, IOB or PCB delay, so add ~10–15 ns before comparing
+with a real DTACK window — which means we do *not* expect zero wait states on a 25 MHz X68030, only
+correctness. And midiori has not been run on the same rig; porting its FSM as a reference model is
+the way to make the comparison a measurement rather than an argument.
+
+Tuning knob if the latency ever matters: 2 of the 6 clocks are the input synchronisers. Driving the
+data bus speculatively off the raw `~AS` and using the synchronised copy only for `~DTACK` would cut
+it to ~3 clocks, at the cost of a deliberate metastability argument. Not done; not needed yet.

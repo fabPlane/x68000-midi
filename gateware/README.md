@@ -22,9 +22,10 @@ make rtl-module MOD=UartTx PARAMS="clk_freq=27000000"   # -> rtl/UartTx.v
 | Module | Status | From |
 |---|---|---|
 | `x68kmidi.uart.UartTx` | ported, tested (8N1 timing at 27 MHz) | midiori `UART` |
+| `x68kmidi.bus.BusSlave68k` | written, tested | midiori's register FSM, re-architected to the six rules |
+| `x68kmidi.busmaster.BusMaster68k` | written, tested | new — the measuring instrument |
 | YM3802 transmit FIFO + ITX (active-sensing 0xFE) wrapper | next | midiori `Midiori` |
-| 68000 bus slave, register file, IRQ vector | next | midiori `Midiori`, re-architected: 108 MHz sample domain, synchronised inputs, honest `~DTACK`, registered read data, async bus release — see `docs/DECISIONS.md` 2026-10-09 |
-| `BusMaster68k` — parameterised cycle generator for the Console, to measure margin at 10/16/25/33 MHz | next | new |
+| YM3802 register file behind the slave (the real one, not the test stub) | next | midiori `Midiori` |
 | PSRAM window | later | zf3/psram-tang-nano-9k (Verilog `Instance`) |
 | YM3802 receive side | last | new |
 
@@ -35,3 +36,29 @@ make rtl-module MOD=UartTx PARAMS="clk_freq=27000000"   # -> rtl/UartTx.v
 3. **Slot breakout PCB**: 2 × 50 fingers + 6 translators + 2 × 20 header, no FPGA. Proves the finger footprint, bevel, plate and card guides cheaply, and connects either dev board to a real X68000 for the bus-slave bring-up (~DTACK timing, IRQ vector on ~IACK, IPL sizing with a BSRAM/DDR3 stand-in window).
 4. Nano 9K: wrap `zf3/psram-tang-nano-9k` as an `Instance`; measure random 16-bit read latency; find the PSRAM pad placement for the open flow.
 5. YM3802 receive side — last, only when someone needs STed2 recording.
+
+
+## Speed sweep
+
+`uv run --project gateware python -m tools.sweep [master_mhz]` drives the slave with
+`BusMaster68k` at a range of emulated CPU clocks and reports what the slave did. With the bus
+front end at 108 MHz:
+
+```
+ emulated CPU  S len        DTACK latency  wait states  result
+       6.8 MHz      8      6 clk =  55.6 ns            0  ok
+      10.8 MHz      5      6 clk =  55.6 ns            0  ok
+      13.5 MHz      4      6 clk =  55.6 ns            0  ok
+      18.0 MHz      3      6 clk =  55.6 ns            0  ok
+      27.0 MHz      2      6 clk =  55.6 ns            1  ok
+      54.0 MHz      1      6 clk =  55.6 ns            2  ok
+```
+
+The point is the constant latency column: the slave's answer does not depend on how fast the CPU
+asks, so going faster buys wait states rather than failures. At 135 MHz the same six clocks are
+44.4 ns. Simulation contains no translator, IOB or PCB delay — add roughly 10–15 ns before
+comparing with a CPU's DTACK window.
+
+**Not yet measured:** midiori's own FSM on the same rig. Porting it as a reference model would turn
+"we are better" from an argument into a number; until then the claim rests on the code read in
+`docs/DECISIONS.md`.
