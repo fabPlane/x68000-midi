@@ -27,6 +27,10 @@ from amaranth.lib import wiring
 # CamelCase module name -> "import.path:attribute"
 REGISTRY: dict[str, str] = {
     "UartTx": "x68kmidi.uart:UartTx",
+    "BusSlave68k": "x68kmidi.bus:BusSlave68k",
+    "BusMaster68k": "x68kmidi.busmaster:BusMaster68k",
+    "Ym3802": "x68kmidi.ym3802:Ym3802",
+    "Card": "x68kmidi.card:Card",
 }
 
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent / "rtl"

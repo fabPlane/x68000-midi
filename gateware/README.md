@@ -26,8 +26,11 @@ make rtl-module MOD=UartTx PARAMS="clk_freq=27000000"   # -> rtl/UartTx.v
 | `x68kmidi.busmaster.BusMaster68k` | written, tested | new — the measuring instrument |
 | `x68kmidi.midiori_ref.MidioriBusSlave` | written, tested | faithful port of midiori's bus FSM, for comparison |
 | `x68kmidi.sim_harness` | — | master + slave + register file, slave swappable |
+| `x68kmidi.ym3802.Ym3802` | written, tested | midiori `Midiori` register file + transmitter |
+| `x68kmidi.card.Card` | written, tested end to end | new — two ports, `$EAFA00`/`~IRQ2` and `$EAFA10`/`~IRQ4` |
 | YM3802 transmit FIFO + ITX (active-sensing 0xFE) wrapper | next | midiori `Midiori` |
-| YM3802 register file behind the slave (the real one, not the test stub) | next | midiori `Midiori` |
+| PSRAM window (third decoder on the same bus) | next | zf3/psram-tang-nano-9k as an `Instance` |
+| YM3802 receive side | last | new |
 | PSRAM window | later | zf3/psram-tang-nano-9k (Verilog `Instance`) |
 | YM3802 receive side | last | new |
 
@@ -38,6 +41,13 @@ make rtl-module MOD=UartTx PARAMS="clk_freq=27000000"   # -> rtl/UartTx.v
 3. **Slot breakout PCB**: 2 × 50 fingers + 6 translators + 2 × 20 header, no FPGA. Proves the finger footprint, bevel, plate and card guides cheaply, and connects either dev board to a real X68000 for the bus-slave bring-up (~DTACK timing, IRQ vector on ~IACK, IPL sizing with a BSRAM/DDR3 stand-in window).
 4. Nano 9K: wrap `zf3/psram-tang-nano-9k` as an `Instance`; measure random 16-bit read latency; find the PSRAM pad placement for the open flow.
 5. YM3802 receive side — last, only when someone needs STed2 recording.
+
+## Clocking
+
+One 108 MHz domain for the whole card, PLL'd x4 from the 27 MHz oscillator:
+108 MHz / 31250 = 3456 and 108 MHz x 4 us = 432, both exact, so the MIDI bit rate and the YM3802
+timer tick need no second clock, no fractional divider and no clock-domain crossing anywhere
+between the slot and the jack. (The PSRAM controller will bring its own domain.)
 
 
 ## Speed sweep
