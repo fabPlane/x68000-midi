@@ -52,6 +52,9 @@ PY
     build/x68000-breakout.kicad_pcb >/dev/null
 "$KPY" hw/fix_planes.py
 "$CLI" pcb drc --severity-all --format json -o build/drc-all.json \
+    build/x68000-breakout.kicad_pcb >/dev/null
+"$KPY" hw/tidy_board.py
+"$CLI" pcb drc --severity-all --format json -o build/drc-all.json \
     build/x68000-breakout.kicad_pcb | grep Found
 "$CLI" pcb export svg --layers F.Cu,B.Cu,In1.Cu,In2.Cu,F.SilkS,Edge.Cuts \
     --page-size-mode 2 --exclude-drawing-sheet \

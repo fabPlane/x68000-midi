@@ -293,3 +293,32 @@ with no via at all.
 
 Remaining before fab: 12 plane vias, silkscreen tidy (35 silk-over-copper, 15 overlaps), 3 dangling
 vias to delete, then gerbers.
+
+## 2026-10-11 — breakout finished to 0 DRC errors; fab package generated
+
+`hw/tidy_board.py` closes the plane stubs that `fix_planes.py` gives up on (it also allows a short
+stub track to reach a clear via spot, testing both the via and the stub against every other net) and
+tidies the silkscreen: passives lose their reference text, which a machine-assembled board does not
+need, and everything a person has to identify keeps its reference, moved clear of its own pads.
+Silkscreen violations went 50 → 5.
+
+**State: 0 DRC errors, every signal net routed, 8 unconnected items — all plane connections.** They
+are the translator supply pins and two ground fingers, in the most congested corners; a stub there
+would cross a routed track, so the script correctly declines. Each needs one via placed by hand.
+
+Two things measured along the way: letting the stub placer use a 0.2 mm clearance produced a
+`tracks_crossing` error, so it is 0.35 mm now — a stub that is never placed beats a stub that
+crosses. And surface GND pours must stop at the finger tab: between gold fingers at 2.54 mm pitch a
+pour is a row of slivers that fills as isolated islands and reports as unconnected zones.
+
+`build/fab/` now holds gerbers, Excellon drill, the CPL and a BOM (`hw/make_bom.py`, generated from
+the netlist since there is no schematic to run `sch export bom` against). **The LCSC column is
+deliberately empty** — assembly matches by LCSC number against live stock and a guessed number buys
+the wrong part.
+
+[FAB-BREAKOUT.md](FAB-BREAKOUT.md) is the ordering guide and, more usefully, the list of six things
+no person has checked: there is no schematic so ERC has never run; the edge-finger geometry is
+copied from midiori and has never been in a real slot; hard gold and the 45° bevel are order notes
+that are not in the gerbers; the footprints have not been checked against buyable parts; JLCPCB's
+rotation convention differs from KiCad's and six parts are on the bottom; and the LCSC numbers are
+missing. The board is not ready to order until those are addressed.

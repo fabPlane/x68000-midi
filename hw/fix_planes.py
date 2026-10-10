@@ -151,9 +151,11 @@ def add_via(board, net, x, y):
     return v
 
 
-#: The same outline the In1 pour uses, so the surface copper lines up with it.
-GROUND_OUTLINE = [(46, 48), (58, 48), (58, 41), (119, 41),
-                  (119, 187), (58, 187), (58, 174), (46, 174)]
+#: The body only, deliberately not the finger tab: between gold fingers at
+#: 2.54 mm pitch a surface pour is a row of slivers that fills as isolated
+#: islands, which DRC then reports as unconnected GND zones. The tab keeps its
+#: inner-layer pour, which is what the ground fingers actually need.
+GROUND_OUTLINE = [(58, 41), (119, 41), (119, 187), (58, 187)]
 
 
 def add_surface_ground(board) -> None:
