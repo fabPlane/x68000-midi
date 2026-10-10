@@ -39,12 +39,28 @@ TRACK_W = 0.25          # mm; plenty for a 5 mA MIDI loop and a 68000 bus
 PLANE_CLEAR = 0.3
 VIA_D, VIA_DRILL = 0.6, 0.3
 
-PLANES = {
-    #  net    layer         rectangle (x0, y0, x1, y1) in board mm
-    "GND": (pcbnew.In1_Cu, (56.0, 40.0, 119.0, 188.0)),
-    "+5V": (pcbnew.In2_Cu, (56.0, 40.0, 78.0, 188.0)),
-    "VREF": (pcbnew.In2_Cu, (78.5, 40.0, 119.0, 188.0)),
-}
+#: (net, layer, rectangle) — several rectangles per net is fine, KiCad merges
+#: same-net zones that touch.
+#:
+#: Two things here were wrong the first time and both only showed up as
+#: unconnected plane items after routing:
+#:
+#: * the split between +5 V and VREF has to fall **through** the translator
+#:   column, not beside it. An 8T245 is 6 mm wide: its V_CCA pads land at
+#:   x 67.1 and its V_CCB pads at x 72.9, so a split at x 78 put both of them
+#:   over the +5 V pour and left every VREF pad 6 mm from its own plane.
+#: * GND has to reach the edge fingers at x 46-54, which means a second
+#:   rectangle inside the narrow tab, kept clear of the tab's own edges.
+#: One polygon per pour, not two abutting rectangles: same-net zones that share
+#: an edge are reported as intersecting rather than merged.
+PLANES = [
+    ("GND", pcbnew.In1_Cu, [(46, 48), (58, 48), (58, 41), (119, 41),
+                            (119, 187), (58, 187), (58, 174), (46, 174)]),
+    ("+5V", pcbnew.In2_Cu, [(46, 48), (58, 48), (58, 41), (70, 41),
+                            (70, 187), (58, 187), (58, 174), (46, 174)]),
+    ("VREF", pcbnew.In2_Cu, [(70.5, 41), (119, 41), (119, 187), (70.5, 187)]),
+]
+PLANE_NETS = {net for net, _, _ in PLANES}
 
 
 def mm(v):
@@ -65,8 +81,7 @@ def pt(x, y):
 _KEEPALIVE = []
 
 
-def add_zone(board, net_name, layer, rect):
-    x0, y0, x1, y1 = rect
+def add_zone(board, net_name, layer, points):
     zone = pcbnew.ZONE(board)
     zone.SetLayer(layer)
     zone.SetNetCode(board.FindNet(net_name).GetNetCode())
@@ -74,7 +89,7 @@ def add_zone(board, net_name, layer, rect):
     zone.SetMinThickness(mm(0.2))
     outline = pcbnew.SHAPE_POLY_SET()
     outline.NewOutline()
-    for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+    for x, y in points:
         outline.Append(mm(x), mm(y))
     zone.SetOutline(outline)
     _KEEPALIVE.append(outline)
@@ -147,7 +162,7 @@ def stitch_plane_pads(board) -> int:
         cx, cy = to_mm(fp.GetPosition().x), to_mm(fp.GetPosition().y)
         for pad in fp.Pads():
             net = pad.GetNet()
-            if net.GetNetname() not in PLANES:
+            if net.GetNetname() not in PLANE_NETS:
                 continue
             if pad.GetAttribute() != pcbnew.PAD_ATTRIB_SMD:
                 continue
@@ -216,8 +231,8 @@ def signal_bundles(board):
 def main() -> int:
     board = pcbnew.LoadBoard(str(BOARD))
 
-    for name, (layer, rect) in PLANES.items():
-        add_zone(board, name, layer, rect)
+    for name, layer, points in PLANES:
+        add_zone(board, name, layer, points)
     stitched = stitch_plane_pads(board)
 
     # Signal routing is deliberately NOT done here. Direct pad-to-pad segments

@@ -262,3 +262,34 @@ Still to do before fab: drop vias on those 15 plane stubs, tidy the silkscreen, 
 edge-connector footprint's solder-mask bridges — the slivers between 2.54 mm gold fingers are below
 KiCad's default minimum, which is correct for a normal footprint and wrong for an edge connector
 (the finger area should be mask-free). Then gerbers.
+
+### 2026-10-10 — plane stubs closed; the mask bridges were my own doing
+
+**0 DRC errors at every severity. Every signal net routed. 12 unconnected items remain, all of them
+plane stubs** (+5 V 6, GND 4, VREF 2) — a via each in pcbnew with the ratsnest showing.
+
+`hw/build_breakout.sh` now runs the whole thing including `hw/fix_planes.py`, which drives itself
+from DRC's own report: for each unconnected plane item it walks the track that item belongs to and
+drops a via at the first point with room. A via on existing copper adds nothing that can collide
+with a neighbour, which is why this is safe after routing when a stub track would not be.
+
+**The solder-mask bridges were never a footprint problem.** They appeared only in the naive-routing
+experiments — 202 of them, 138 attributed to J1 — because those tracks opened mask near the fingers.
+A placement-only board had none, and the routed board has none at any severity. The edge-connector
+footprint needs no change. I had put this down to the 2.54 mm finger pitch, which was wrong.
+
+Four real faults the plane work exposed, none of which reading the files would have shown:
+
+| Fault | Why it happened |
+|---|---|
+| **The VREF pour was 6 mm from every VREF pad** | the +5 V / VREF split has to fall *through* the translator column, not beside it. An 8T245 is 6 mm wide: V_CCA lands at x 67.1 and V_CCB at x 72.9, so a split at x 78 put both over the +5 V pour. Now at x 70.25. |
+| **GND did not reach the edge fingers** | the pour started at x 56 and the fingers are at x 46–54. The pours are now single polygons shaped round the finger tab, kept clear of its edges. |
+| **Flipping a footprint mirrors it in X** | so the bottom-side translators' supply pins landed on the wrong half of the split. Flip plus 180° rotation is a mirror in Y alone, which puts them back. |
+| **Two abutting same-net rectangles are "intersecting", not merged** | hence one polygon per pour. |
+
+Also added: GND poured into the leftover surface copper on both outer layers, which is standard and
+does much of `fix_planes.py`'s job for free — a GND pad on F.Cu reaches the pour on its own layer
+with no via at all.
+
+Remaining before fab: 12 plane vias, silkscreen tidy (35 silk-over-copper, 15 overlaps), 3 dangling
+vias to delete, then gerbers.

@@ -64,15 +64,22 @@ PLACEMENT = {
     "U1": (70.0, 156.0, 0, "F"),      # SD0-7   <- A4-A12
     "U2": (70.0, 134.0, 0, "F"),      # SD8-15  <- A13-A20
     "U6": (70.0, 95.0, 0, "F"),       # strobes <- A27-A30, A37, B30, B44/45
-    # address, bottom side, under the others
-    "U3": (70.0, 152.0, 0, "B"),      # SA1-8   <- B5-B13
-    "U4": (70.0, 129.0, 0, "B"),      # SA9-16  <- B14-B22
-    "U5": (70.0, 107.0, 0, "B"),      # SA17-23 <- B23-B29, CLK10M <- B2
+    # Address, bottom side, under the others. Rotated 180 because flipping a
+    # footprint mirrors it in X: at 0 degrees the bottom parts' V_CCA pads
+    # would land at x 72.9 and their V_CCB pads at x 67.1, i.e. each over the
+    # wrong half of the In2 split. Flip plus 180 is a mirror in Y alone, which
+    # puts the supply pins back where the top-side parts have them.
+    "U3": (70.0, 152.0, 180, "B"),    # SA1-8   <- B5-B13
+    "U4": (70.0, 129.0, 180, "B"),    # SA9-16  <- B14-B22
+    "U5": (70.0, 107.0, 180, "B"),    # SA17-23 <- B23-B29, CLK10M <- B2
     "U7": (60.0, 146.0, 0, "F"),      # AHCT direction buffer
-    "U8": (62.0, 70.0, 0, "F"),       # open-drain returns, near B42-B45
-    "U9": (62.0, 62.0, 0, "F"),
+    # The open-drain buffers and the VREF link run on VREF, so they sit on
+    # the VREF side of the In2 split (x > 70.5) even though their inputs come
+    # from fingers further left.
+    "U8": (78.0, 70.0, 0, "F"),       # open-drain returns, near B42-B45
+    "U9": (78.0, 62.0, 0, "F"),
     "U10": (66.0, 176.0, 0, "F"),     # local 3.3 V LDO (DNP)
-    "JP1": (70.0, 182.0, 0, "F"),
+    "JP1": (76.0, 182.0, 0, "F"),
     "F1": (59.0, 182.0, 90, "F"),
     # Ribbons. This footprint's origin is pad 1 and its 20 rows run +Y from
     # there, so rotation 0 already has the long axis down the card. They are
@@ -121,14 +128,16 @@ def draw_outline(board) -> None:
 
 def anchor_of(design, ref: str) -> tuple[float, float]:
     """Where this part would like to be: beside whichever placed part it
-    shares a net with. Decoupling then lands next to what it decouples."""
+    shares a net with, and on the correct side of the In2 plane split — a
+    VREF cap placed to the left of its translator would sit over the +5 V
+    pour and need a track all the way back."""
     for net, nodes in design.nets.items():
         if net == "GND" or not any(r == ref for r, _ in nodes):
             continue
         for other, _ in nodes:
             if other in PLACEMENT:
                 x, y = PLACEMENT[other][0], PLACEMENT[other][1]
-                return x - 8.0, y
+                return (x + 8.0 if net == "VREF" else x - 8.0), y
     return (RIGHT - 10.0, 180.0)
 
 

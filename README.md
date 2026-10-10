@@ -37,8 +37,9 @@ host, or leave the translators off for a 5 V-tolerant one such as an RP2350.
 It is **placed and routed**: `hw/build_breakout.sh` runs the whole pipeline — place
 (`layout_breakout.py`), pour the planes (`route_breakout.py`), export a Specctra DSN, run
 freerouting, import the session, fill and DRC — with no GUI anywhere, because `pcbnew`'s Python API
-can do the DSN/SES round trip that `kicad-cli` cannot. Result: every signal routed, 1676 tracks,
-200 vias, **0 DRC errors**, with 15 plane stubs left to drop vias on by hand.
+can do the DSN/SES round trip that `kicad-cli` cannot. It finishes with `fix_planes.py`, which drops vias on the plane stubs the router leaves behind.
+Result: **every signal net routed, 0 DRC errors at every severity**, with 12 plane stubs and the
+silkscreen left to tidy by hand.
 
 Next: route and order the breakout, Tang Console bring-up of the MIDI path over it, PSRAM
 read-latency measurement on a Tang Nano 9K, then the main PCB.

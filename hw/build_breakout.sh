@@ -47,7 +47,11 @@ pcbnew.ZONE_FILLER(b).Fill(b.Zones())
 pcbnew.SaveBoard("build/x68000-breakout.kicad_pcb", b)
 print("imported session, zones filled", flush=True)
 PY
-"$CLI" pcb drc --severity-error --format json -o build/drc.json \
+# Connect the plane stubs the router leaves behind, then check for real.
+"$CLI" pcb drc --severity-all --format json -o build/drc-all.json \
+    build/x68000-breakout.kicad_pcb >/dev/null
+"$KPY" hw/fix_planes.py
+"$CLI" pcb drc --severity-all --format json -o build/drc-all.json \
     build/x68000-breakout.kicad_pcb | grep Found
 "$CLI" pcb export svg --layers F.Cu,B.Cu,In1.Cu,In2.Cu,F.SilkS,Edge.Cuts \
     --page-size-mode 2 --exclude-drawing-sheet \
