@@ -194,6 +194,39 @@ def tidy_silkscreen(board) -> tuple[int, int]:
     return hidden, moved
 
 
+def drop_unused_anchors(board) -> int:
+    """Remove plane vias no track ever reached.
+
+    The anchors exist to give the router somewhere to aim; the ones it did not
+    use are holes nobody pays for twice.
+
+    GND anchors stay, used or not. They are not spare targets, they are the
+    stitching that ties the GND pours on F.Cu, In1 and B.Cu into one piece —
+    deleting them split the ground into islands that DRC then reported as
+    unconnected zones.
+    """
+    ends = []
+    for t in board.Tracks():
+        if t.Type() == pcbnew.PCB_VIA_T:
+            continue
+        for p in (t.GetStart(), t.GetEnd()):
+            ends.append((to_mm(p.x), to_mm(p.y)))
+    doomed = []
+    for t in board.Tracks():
+        if t.Type() != pcbnew.PCB_VIA_T:
+            continue
+        net = t.GetNet().GetNetname()
+        if net not in PLANE_NETS or net == "GND":
+            continue
+        p = t.GetPosition()
+        x, y = to_mm(p.x), to_mm(p.y)
+        if not any((ex - x) ** 2 + (ey - y) ** 2 < 0.01 for ex, ey in ends):
+            doomed.append(t)
+    for t in doomed:
+        board.Remove(t)
+    return len(doomed)
+
+
 def main() -> int:
     board = pcbnew.LoadBoard(str(BOARD))
     copper = Copper(board)
@@ -204,7 +237,9 @@ def main() -> int:
     print(f"plane stubs: {added} connected with a stub and via")
     if failed:
         print("  still unconnected: " + "; ".join(failed))
+    dropped = drop_unused_anchors(board)
     print(f"silkscreen: {hidden} passive references hidden, {moved} moved clear")
+    print(f"anchors: {dropped} unused plane vias removed")
     return 0
 
 

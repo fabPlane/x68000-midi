@@ -322,3 +322,33 @@ copied from midiori and has never been in a real slot; hard gold and the 45° be
 that are not in the gerbers; the footprints have not been checked against buyable parts; JLCPCB's
 rotation convention differs from KiCad's and six parts are on the bottom; and the LCSC numbers are
 missing. The board is not ready to order until those are addressed.
+
+### 2026-10-11 — the last plane connections: stop hand-placing vias, give the router anchors
+
+8 unconnected → **3, still 0 DRC errors**. All three are GND: one ground finger and two
+surface-pour islands.
+
+Four approaches, measured, in order:
+
+| Approach | Result |
+|---|---|
+| per-pad stub and via, after routing | gave up on 30 pads; the board is full by then |
+| same, searching eight directions | 2 DRC violations, 13 unconnected |
+| same, run **before** routing so there is room | **worse**: 12 unconnected — the vias got in the router's way |
+| **sparse via anchors per pour, let freerouting reach them** | 7, then 5, then **3** |
+
+The lesson is the one the whole routing exercise keeps teaching: freerouting is better at finding a
+path than any heuristic in this repo, so the job is to give it targets rather than to do its work.
+A coarse grid of vias per pour, plus one anchor just off the end of each translator's supply pins
+(0.65 mm pitch with routing on three sides is the hardest pad on the board), and it connects them.
+
+Two refinements that each cost a rebuild to find:
+
+* **Delete the anchors the router did not use** — 82 of them, holes nobody should pay to drill.
+* **Except the GND ones.** They are not spare targets, they are the stitching that ties the GND
+  pours on F.Cu, In1 and B.Cu into one piece; deleting them split the ground into islands that DRC
+  reported as unconnected zones. That alone took it from 5 to 3.
+
+Left: 3 GND connections, 5 silkscreen labels on copper, and 81 `via_dangling` warnings that are
+almost certainly KiCad flagging via-to-pour connections — connectivity says the plane nets are
+complete — but want a human to open a few and confirm before 337 holes get drilled.

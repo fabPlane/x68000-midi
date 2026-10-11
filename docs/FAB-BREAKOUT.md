@@ -8,28 +8,30 @@ drill, CPL and BOM land in `build/fab/`.
 | | |
 |---|---|
 | Board | 76 × 150 mm, 4 layer, 1.6 mm |
-| DRC | **0 errors**, 9 warnings (4 dangling vias, 5 silkscreen) |
+| DRC | **0 errors**, 86 warnings (81 dangling vias, 5 silkscreen) |
 | Routing | **every signal net routed** |
-| Unconnected | **8 items, all plane connections** — see below |
+| Unconnected | **3 items, all GND** — see below |
 | Parts | 29 to fit, 2 DNP |
 
 ## Not ready to order
 
-Eight pads still have no path to their plane. Each needs one via, placed in
-pcbnew with the ratsnest on; the script gave up because these sit in the most
-congested corners of the board and a stub there would cross a routed track.
+Three GND connections are still open. Each is a minute in pcbnew with the
+ratsnest showing.
 
-| Net | Where | What it is |
-|---|---|---|
-| +5 V | U1 pin 1 @ 67.1, 152.4 | translator V_CCA |
-| +5 V | U2 pin 1 @ 67.1, 130.4 | translator V_CCA |
-| +5 V | two stubs @ 67.1, 131.9 and 67.1, 154.9 (B.Cu) | U3/U4 V_CCA |
-| GND | J1 pad A21 @ 50.0, 122.7 | ground finger |
-| GND | J1 pad A3 @ 50.0, 168.4 | ground finger |
-| VREF | U2 pin 23 @ 72.9, 131.1 | translator V_CCB |
+| Where | What it needs |
+|---|---|
+| J1 pad A3 @ 50.0, 168.4 | a via to the In1 pour; the GND track 5 mm away at 50.0, 173.5 is the one to join |
+| GND pour, F.Cu ↔ B.Cu near 58, 41 | one stitching via in a spot where both surface pours have copper — two island pairs, probably the same via fixes both |
 
-Also worth doing while in there: delete the 4 dangling vias, and move the 5
-remaining silkscreen labels off copper.
+**The 81 `via_dangling` warnings want an eye before ordering.** KiCad raises
+these for a via whose only other connection is a pour. Connectivity says the
+plane nets are complete — if those vias were doing nothing, the pads they serve
+would show as unconnected, and three GND items are all that do. So they are
+almost certainly fine, but "almost certainly" is not what you want on a board
+you are paying to drill 337 holes in. Open a few in pcbnew and confirm.
+
+Also worth doing while in there: the 5 remaining silkscreen labels sitting on
+copper.
 
 ## Everything else that has never been checked by a person
 

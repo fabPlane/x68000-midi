@@ -130,102 +130,114 @@ def pad_xy(pad):
     return to_mm(p.x), to_mm(p.y)
 
 
-def clear_of_obstacles(board, xy, radius) -> bool:
-    """True if a via at `xy` keeps `radius` clear of every pad and via."""
-    x, y = xy
+def seg_distance(p, a, b) -> float:
+    (px, py), (ax, ay), (bx, by) = p, a, b
+    dx, dy = bx - ax, by - ay
+    if dx == 0 and dy == 0:
+        return ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    return ((px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2) ** 0.5
+
+
+def obstacles(board):
+    """Pads and vias with their nets. Called before any routing exists, which
+    is the whole point: a plane via placed now has room, and freerouting will
+    route around it. Placed afterwards it has to squeeze into what is left,
+    which is why the first version of this gave up on thirty pads."""
+    out = []
     for fp in board.GetFootprints():
         for pad in fp.Pads():
-            px, py = pad_xy(pad)
-            size = max(to_mm(pad.GetSize().x), to_mm(pad.GetSize().y)) / 2
-            if (px - x) ** 2 + (py - y) ** 2 < (radius + size) ** 2:
-                return False
-    for track in board.Tracks():
-        if track.Type() == pcbnew.PCB_VIA_T:
-            vx, vy = to_mm(track.GetPosition().x), to_mm(track.GetPosition().y)
-            if (vx - x) ** 2 + (vy - y) ** 2 < (radius + VIA_D / 2 + 0.2) ** 2:
-                return False
+            p = pad.GetPosition()
+            r = max(to_mm(pad.GetSize().x), to_mm(pad.GetSize().y)) / 2
+            out.append((to_mm(p.x), to_mm(p.y), r, pad.GetNet().GetNetname()))
+    for t in board.Tracks():
+        if t.Type() == pcbnew.PCB_VIA_T:
+            p = t.GetPosition()
+            out.append((to_mm(p.x), to_mm(p.y), VIA_D / 2,
+                        t.GetNet().GetNetname()))
+    return out
+
+
+def via_clear(items, x, y, net) -> bool:
+    r = VIA_D / 2 + 0.3
+    for px, py, size, pnet in items:
+        limit = r + size if pnet != net else VIA_DRILL + 0.5
+        if (px - x) ** 2 + (py - y) ** 2 < limit ** 2:
+            return False
     return True
 
 
-skipped: list[str] = []
+def stub_clear(items, a, b, net) -> bool:
+    r = TRACK_W / 2 + 0.3
+    for px, py, size, pnet in items:
+        if pnet != net and seg_distance((px, py), a, b) < r + size:
+            return False
+    return True
+
+
+#: Where each net's anchors may go: the region its pour covers.
+ANCHOR_REGIONS = {
+    "GND": (59.0, 43.0, 118.0, 186.0),
+    "+5V": (59.0, 43.0, 69.0, 186.0),
+    "VREF": (71.5, 43.0, 118.0, 186.0),
+}
+ANCHOR_PITCH = 9.0
 
 
 def stitch_plane_pads(board) -> int:
-    """Every SMD pad on a plane net gets a short stub and a via down to it.
+    """Scatter via anchors across each pour and let the router find them.
 
-    Through-hole pads already pass through every layer, so they need nothing.
-    The stub goes straight out from the pad, away from its footprint's centre,
-    which for a two-row IC or an 0603 is the direction with room in it.
+    Three attempts at giving every plane pad its own stub and via all made
+    things worse -- 30 pads skipped, then 2 DRC violations, then 12 unconnected
+    instead of 8 -- because a via hand-placed next to a 0.65 mm pitch pin is
+    either in the way of the routing or unreachable once the routing is there.
+
+    Freerouting is better at this than any heuristic here: it already treats
+    GND, +5 V and VREF as nets to route. So put down a coarse grid of vias in
+    clear space, one set per pour, and let it connect each pad to whichever
+    anchor it can reach. The pours still carry the current; the anchors just
+    give the router somewhere to aim.
     """
     made = 0
+    items = obstacles(board)
+
+    # A translator's supply pins are the hardest pads on the board to reach:
+    # 0.65 mm pitch, routing on three sides. Give each one its own anchor just
+    # off the end of the package, before anything else is in the way.
     for fp in board.GetFootprints():
-        cx, cy = to_mm(fp.GetPosition().x), to_mm(fp.GetPosition().y)
-        for pad in fp.Pads():
+        pads = {p.GetNumber(): p for p in fp.Pads()}
+        if "23" not in pads or "1" not in pads:
+            continue
+        if pads["1"].GetNet().GetNetname() != "+5V":
+            continue
+        for number, dx in (("1", -5.5), ("23", 5.5)):
+            pad = pads[number]
             net = pad.GetNet()
-            if net.GetNetname() not in PLANE_NETS:
-                continue
-            if pad.GetAttribute() != pcbnew.PAD_ATTRIB_SMD:
-                continue
             x, y = pad_xy(pad)
-            dx, dy = x - cx, y - cy
-            layer = pcbnew.F_Cu if pad.IsOnLayer(pcbnew.F_Cu) else pcbnew.B_Cu
-            # Step out from the pad, away from the footprint's middle, until
-            # the via clears every hole and pad already on the board. A fixed
-            # 0.9 mm stub lands on a neighbour often enough to matter.
-            # Straight out along the dominant axis, at increasing reach.
-            # Trying eight directions instead was measured and is worse: it
-            # places ~20 more stitch vias but crowds the routing channels
-            # enough to cost 2 DRC violations, and zero errors is worth more
-            # than a handful of pre-made plane connections.
-            spot = None
-            for reach in (0.9, 1.3, 1.7, 2.2, 2.8):
-                if abs(dx) >= abs(dy):
-                    cand = (x + (reach if dx >= 0 else -reach), y)
-                else:
-                    cand = (x, y + (reach if dy >= 0 else -reach))
-                if clear_of_obstacles(board, cand, VIA_D / 2 + 0.3):
-                    spot = cand
+            for offset in (dx, dx * 1.3, dx * 1.7):
+                cand = (x + offset, y)
+                if via_clear(items, *cand, net.GetNetname()):
+                    add_via(board, net, *cand)
+                    items.append((cand[0], cand[1], VIA_D / 2, net.GetNetname()))
+                    made += 1
                     break
-            if spot is None:
-                skipped.append(f"{fp.GetReference()}.{pad.GetNumber()}")
-                continue
-            add_track(board, net, layer, (x, y), spot)
-            add_via(board, net, *spot)
-            made += 1
+
+    for net_name, (x0, y0, x1, y1) in ANCHOR_REGIONS.items():
+        net = board.FindNet(net_name)
+        y = y0
+        while y <= y1:
+            x = x0
+            while x <= x1:
+                if via_clear(items, x, y, net_name):
+                    add_via(board, net, x, y)
+                    items.append((x, y, VIA_D / 2, net_name))
+                    made += 1
+                x += ANCHOR_PITCH
+            y += ANCHOR_PITCH
     return made
 
 
-def pads_of(board, ref):
-    for fp in board.GetFootprints():
-        if fp.GetReference() == ref:
-            return {p.GetNumber(): p for p in fp.Pads()}
-    raise SystemExit(f"no footprint {ref}")
-
-
-def signal_bundles(board):
-    """(net, from-pad, to-pad, layer) for every two-pad signal net, grouped so
-    each group is monotonic in y."""
-    out = []
-    j1 = pads_of(board, "J1")
-    for ref, a_first, nets_a in (
-        ("U1", 3, [f"SD{i}" for i in range(8)]),
-        ("U2", 3, [f"SD{i}" for i in range(8, 16)]),
-        ("U3", 3, [f"SA{i}" for i in range(1, 9)]),
-        ("U4", 3, [f"SA{i}" for i in range(9, 17)]),
-        ("U5", 3, [f"SA{i}" for i in range(17, 24)] + ["CLK10M"]),
-        ("U6", 3, ["AS_N", "UDS_N", "LDS_N", "RW", "IACK2_N", "IACK4_N",
-                   "EXRESET_N", "IDDIR"]),
-    ):
-        pads = pads_of(board, ref)
-        for i, name in enumerate(nets_a):
-            net = board.FindNet(name)
-            finger = next((p for p in j1.values() if p.GetNet().GetNetname() == name),
-                          None)
-            if finger is None:
-                continue
-            layer = pcbnew.F_Cu if finger.IsOnLayer(pcbnew.F_Cu) else pcbnew.B_Cu
-            out.append((name, finger, pads[str(a_first + i)], layer))
-    return out
+skipped: list[str] = []
 
 
 def main() -> int:
