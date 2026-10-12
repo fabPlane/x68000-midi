@@ -119,7 +119,11 @@ FOOTPRINT = {
     "H11L1": "Package_DIP:DIP-6_W7.62mm",
     "LDO": "Package_TO_SOT_SMD:SOT-23-5",
     "OSC": "Oscillator:Oscillator_SMD_Abracon_ASE-4Pin_3.2x2.5mm",
-    "TRS": "Connector_Audio:Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical_CircularHoles",
+    # A real *stereo* jack. The QingPu WQP-PJ398SM used here first is a mono
+    # TS jack with a tip switch — pads S, T and TN, no ring at all — which
+    # would have made the MIDI current loop unbuildable. The pad check in
+    # layout_logic.py caught it.
+    "TRS": "Connector_Audio:Jack_3.5mm_CUI_SJ1-3533NG_Horizontal_CircularHoles",
     "JTAG": "Connector_PinHeader_1.27mm:PinHeader_2x05_P1.27mm_Vertical_SMD",
     "DIP4": "Button_Switch_SMD:SW_DIP_SPSTx04_Slide_Omron_A6S-410x_W8.9mm_P2.54mm",
     "LED": "LED_SMD:LED_0603_1608Metric",

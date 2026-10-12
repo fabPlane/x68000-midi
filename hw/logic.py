@@ -56,7 +56,7 @@ def header(d: Design, ref: str, signals: list[str], note: str) -> None:
     """Mirror of the breakout's header: same pins, same order, same names."""
     d.add(ref, "IDC40", f"2x20 IDC right-angle <- {note}")
     d.wire("+3V3", ref, "p1")          # VREF: we are the host now
-    d.wire("+5V_SLOT", ref, "p2")      # the slot's 5 V, through the breakout
+    d.wire("+5V_SLOT", ref, "p2")      # the slot's 5 V — needs JP3 on the breakout
     d.wire("+1V8", ref, "p3")          # VREF_LOW
     pins = list(range(4, 39))
     grounds = [n for n in pins if (n - 4) % 5 == 4]

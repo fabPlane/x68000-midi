@@ -91,7 +91,7 @@ def header(d: Design, ref: str, signals: list[str], host_side: str) -> None:
     """
     d.add(ref, "IDC40", f"2x20 IDC right-angle -> {host_side}")
     d.wire("VREF", ref, "p1")
-    d.wire("+5V_FUSED", ref, "p2")
+    d.wire("+5V_HOST", ref, "p2")
     pins = [n for n in range(3, 39)]
     grounds = [n for n in pins if (n - 4) % 5 == 4]
     slots = [n for n in pins if n not in grounds]
@@ -210,6 +210,13 @@ def build() -> Design:
     d.add("F1", "R", "polyfuse 500mA")
     d.wire("+5V", "F1", "1")
     d.wire("+5V_FUSED", "F1", "2")
+    # The slot's 5 V only reaches the host if you ask for it. A Tang Console's
+    # header pins are 3.3 V I/O and Sipeed warn that 5 V destroys the board, so
+    # a header pin that is live by default is a trap. The logic board fits JP3
+    # because it wants the rail; a dev board leaves it out.
+    d.add("JP3", "R", "0R link: slot +5 V -> header pin 2", dnp=True)
+    d.wire("+5V_FUSED", "JP3", "1")
+    d.wire("+5V_HOST", "JP3", "2")
 
     for i, (net, value) in enumerate([("+5V", "10uF"), ("VREF", "10uF")]):
         d.add(f"CB{i}", "C", value)
@@ -232,6 +239,9 @@ def build() -> Design:
         "translators' B side, so the breakout matches whatever the host runs "
         "at. The Tang Console is 3.3 V and Sipeed warn that 5 V on its headers "
         "destroys the board -- never fit JP1 and feed VREF at the same time.",
+        "Header pin 2 carries the slot's 5 V only when JP3 is fitted. Leave it "
+        "out for any 3.3 V host; fit it for the logic board, which runs its "
+        "regulators from it.",
         "Passive build: leave U1-U6 unpopulated and bridge each A/B pair, for a "
         "5 V-tolerant host such as an RP2350. The '07 outputs and the AHCT stay.",
         "~EXACK, ~BR and ~BG go to the header unbuffered at 5 V -- they are "

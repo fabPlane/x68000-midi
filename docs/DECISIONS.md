@@ -472,3 +472,43 @@ Consequences worth stating plainly:
   third split in the In2 plane would have bought nothing and complicated the two that matter.
 
 Breakout after the change: 0 DRC errors, 4 unconnected (all GND, the same two problems).
+
+## 2026-10-13 — laying out the logic board, and what a Tang Console actually needs
+
+`hw/layout_logic.py`, `hw/route_logic.py`, `hw/build_logic.sh` — same pipeline as the breakout's,
+deliberately not shared code: every constant that matters differs, and one parameterised placer for
+two boards would read worse than two placers. 70 × 150 mm, ribbons on the left edge facing the
+breakout (headers rotated 180 so the shrouds point back at it), FPGA in the middle, MIDI jacks on
+the right at the slot plate.
+
+**The pad check caught a footprint that would have made the board unbuildable.** `TRS` was mapped to
+`Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical_CircularHoles`, which is a *mono* TS jack with a tip switch —
+pads S, T and TN, no ring at all. A MIDI current loop needs tip, ring and sleeve. Now
+`Jack_3.5mm_CUI_SJ1-3533NG_Horizontal_CircularHoles`, a real stereo jack, and horizontal so the
+socket looks out of the board edge through the plate. The breakout has no jacks, so this never
+surfaced there.
+
+**Anchor density matters more than I thought.** At the breakout's 8 mm pitch, a 70 × 150 board takes
+215 plane vias — one every 48 mm² — and freerouting ran for over twenty minutes of CPU without
+producing a session. At 14 mm it is 85 and the run completes. The anchors are meant to give the
+router targets, not to fill the board with obstacles.
+
+### What supporting a Tang Console needs — and a correction
+
+I said earlier that a Console "has 48 signals instead of 63". **That was wrong.** The 48-pin limit is
+the *logic board's* FPGA banks — bank 3 must be 1.8 V because it carries the PSRAM, so only 48 of
+its pins are 3.3 V. A Tang Console has ~76 GPIO, all 3.3 V, and with the two references tied it can
+take every signal the breakout carries. The limitation never applied to it.
+
+What it does need:
+
+| | |
+|---|---|
+| **JP2 fitted** | ties VREF_LOW to VREF so all 55 signals arrive at 3.3 V. Already a DNP part on the board. |
+| **JP3 left out** | header pin 2 carries the slot's 5 V. Sipeed warn that 5 V on a Console header destroys it, so that link is now DNP and the pin is dead unless you ask for it. Added today; a live 5 V pin on a connector meant for 3.3 V boards was a trap. |
+| **An adapter, not a straight ribbon** | our 2 × 20 pinout is ours — VREF, +5 V, VREF_LOW, then signals with a ground every fifth pin. Sipeed's is Sipeed's. A straight ribbon would land our grounds on their I/O. Hand-wired ribbons for bring-up, or a small adapter PCB if it becomes routine. |
+| **Console banks at 3.3 V** | Sipeed's own documentation says they are, but it is worth confirming before plugging anything in. |
+
+The honest summary: the Console is a bring-up tool, and a hand-made pair of ribbons is the right
+amount of effort for it. Designing the breakout's pinout around one dev board would spoil it as a
+general instrument.
