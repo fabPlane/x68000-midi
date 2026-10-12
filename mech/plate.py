@@ -28,7 +28,9 @@ plate's straight section.
 
 from pathlib import Path
 
-import cadquery as cq
+# cadquery is imported where it is used, not at module scope, so the constants
+# below can be read by tools that only want the geometry (hw/make_overview.py
+# draws the plate from them) without pulling in OCP.
 
 THICK = 2.0
 LEN, HEIGHT = 176.0, 20.0
@@ -54,6 +56,8 @@ M3_X = (3.51, 169.51)
 
 
 def profile():
+    import cadquery as cq
+
     return (
         cq.Workplane("XY")
         .moveTo(0, HEIGHT).lineTo(0, STEP_DEPTH)
@@ -80,6 +84,8 @@ def jack_x():
 
 
 def main():
+    import cadquery as cq
+
     out = Path(__file__).resolve().parent.parent / "build"
     out.mkdir(exist_ok=True)
     body = plate()

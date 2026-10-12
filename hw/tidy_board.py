@@ -57,7 +57,21 @@ def seg_distance(p, a, b) -> float:
     return ((px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2) ** 0.5
 
 
+def segments_cross(a1, a2, b1, b2) -> bool:
+    """True if the two segments actually intersect. Distance between endpoints
+    does not detect an X crossing -- all four endpoints are far apart."""
+    def side(p, q, r):
+        v = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        return (v > 1e-12) - (v < -1e-12)
+
+    d1, d2 = side(b1, b2, a1), side(b1, b2, a2)
+    d3, d4 = side(a1, a2, b1), side(a1, a2, b2)
+    return d1 != d2 and d3 != d4
+
+
 def seg_seg_distance(a1, a2, b1, b2) -> float:
+    if segments_cross(a1, a2, b1, b2):
+        return 0.0
     return min(seg_distance(a1, b1, b2), seg_distance(a2, b1, b2),
                seg_distance(b1, a1, a2), seg_distance(b2, a1, a2))
 

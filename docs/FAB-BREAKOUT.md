@@ -8,20 +8,23 @@ drill, CPL and BOM land in `build/fab/`.
 | | |
 |---|---|
 | Board | 76 × 150 mm, 4 layer, 1.6 mm |
-| DRC | **0 errors**, 86 warnings (81 dangling vias, 5 silkscreen) |
+| DRC | **0 errors**, 88 warnings (83 dangling vias, 5 silkscreen) |
 | Routing | **every signal net routed** |
-| Unconnected | **3 items, all GND** — see below |
+| Unconnected | **5 items, all GND** — see below |
 | Parts | 29 to fit, 2 DNP |
 
 ## Not ready to order
 
-Three GND connections are still open. Each is a minute in pcbnew with the
-ratsnest showing.
+Five GND connections are still open, and they are two problems, not five. Each
+is a minute in pcbnew with the ratsnest showing.
 
 | Where | What it needs |
 |---|---|
-| J1 pad A3 @ 50.0, 168.4 | a via to the In1 pour; the GND track 5 mm away at 50.0, 173.5 is the one to join |
-| GND pour, F.Cu ↔ B.Cu near 58, 41 | one stitching via in a spot where both surface pours have copper — two island pairs, probably the same via fixes both |
+| J1 pad A3 @ 50.0, 168.4 | a via to the In1 pour. Its eight sibling ground fingers all got one automatically; this one sits where the automatic search could not place a stub without crossing a track |
+| GND pours, F.Cu ↔ B.Cu | four island pairs wanting stitching vias where both surface pours have copper — likely two vias fixes all four |
+
+Note that freerouting's result varies run to run, so this count moves by one or
+two between rebuilds. Check the ratsnest rather than this table.
 
 **The 81 `via_dangling` warnings want an eye before ordering.** KiCad raises
 these for a via whose only other connection is a pour. Connectivity says the

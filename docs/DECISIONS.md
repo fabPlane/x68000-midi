@@ -352,3 +352,43 @@ Two refinements that each cost a rebuild to find:
 Left: 3 GND connections, 5 silkscreen labels on copper, and 81 `via_dangling` warnings that are
 almost certainly KiCad flagging via-to-pour connections — connectivity says the plane nets are
 complete — but want a human to open a few and confirm before 337 holes get drilled.
+
+## 2026-10-12 — a silent pipeline failure, and the overview page
+
+**The important finding is a bug in my own tooling, not in the board.**
+`hw/build_breakout.sh` was running freerouting from a background shell without
+redirecting stdin. Freerouting read stdin, got EOF, and exited before routing
+anything — and because its output went through a `… || true` pipe, the run
+reported success and left an *unrouted* board on disk. Two rebuilds in a row
+produced a board with 191 vias and zero tracks while the stale `drc-all.json`
+still described the previous, good board. I came close to reporting that state
+as finished.
+
+Fixed three ways, because one is not enough for a failure that looks like
+success: `java … < /dev/null`; `test -s …ses` after it; and an assertion in the
+import step that the board has more than 500 tracks. Also `fix_planes.py` now
+refuses to add a second pair of surface pours when re-run, which had been
+stacking zones on each other and producing `zones_intersect` errors.
+
+Two smaller faults found on the way:
+
+* `segments_cross` — the obstacle test for a new stub used the minimum distance
+  between the endpoints of two segments, which is exactly wrong for an X
+  crossing: all four endpoints are far apart. That put seven `tracks_crossing`
+  errors on a board. Replaced with a real orientation test, in both
+  `tidy_board.py` and `fix_last_gnd.py`.
+* An 8 × 1.8 mm gold finger modelled as a 4 mm-radius circle blocked every route
+  east of the edge connector, which is why no ground finger could be given a
+  via. Pads are rectangles now.
+
+State after a clean, verified run: **0 DRC errors, 5 unconnected, all GND** —
+one ground finger and four pour-island pairs, two underlying problems. Every
+signal net routed. Note that freerouting's result varies run to run; the count
+moves by one or two between rebuilds.
+
+`hw/make_overview.py` writes `docs/boards.html`: 3D renders of both sides, a
+tabbed view of all four copper layers, the live DRC and track counts read from
+the board itself, the MIDI card's status, and the cover plate drawn from
+`mech/plate.py`'s own constants. Self-contained, as the enclosure guides are.
+`mech/plate.py` now imports cadquery inside its functions so those constants can
+be read without pulling in OCP.

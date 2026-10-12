@@ -166,7 +166,11 @@ def add_surface_ground(board) -> None:
     why the edge connector's ground fingers stop being a problem.
     """
     net = board.FindNet("GND")
+    already = {z.GetLayer() for z in board.Zones()
+               if z.GetNet().GetNetname() == "GND"}
     for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
+        if layer in already:
+            continue          # re-running must not stack pours on each other
         zone = pcbnew.ZONE(board)
         zone.SetLayer(layer)
         zone.SetNetCode(net.GetNetCode())

@@ -36,16 +36,26 @@ for layer in ("In1.Cu", "In2.Cu"):
 p.write_text(text)
 print("marked In1.Cu and In2.Cu as power layers", flush=True)
 PY
+# `< /dev/null` matters: run from a background shell without it, freerouting
+# reads stdin, gets EOF and exits before routing anything -- and because its
+# output went through a `|| true` pipe, the run looked like a success and left
+# an unrouted board behind. The guard below is the second line of defence.
+rm -f build/x68000-breakout.ses
 java -Djava.awt.headless=true -jar "$JAR" \
     -de build/x68000-breakout.dsn -do build/x68000-breakout.ses \
-    -mp "$PASSES" -mt 4 2>&1 | grep -E "Auto-routing stage completed|Optimization stage completed" || true
+    -mp "$PASSES" -mt 4 < /dev/null 2>&1 \
+    | grep -E "Auto-routing stage completed|Optimization stage completed" || true
+test -s build/x68000-breakout.ses || {
+    echo "freerouting produced no session file — stopping" >&2; exit 1; }
 "$KPY" - <<'PY'
 import pcbnew
 b = pcbnew.LoadBoard("build/x68000-breakout.kicad_pcb")
 assert pcbnew.ImportSpecctraSES(b, "build/x68000-breakout.ses")
+tracks = len([t for t in b.Tracks() if t.Type() != pcbnew.PCB_VIA_T])
+assert tracks > 500, f"only {tracks} tracks after import — the session is empty"
 pcbnew.ZONE_FILLER(b).Fill(b.Zones())
 pcbnew.SaveBoard("build/x68000-breakout.kicad_pcb", b)
-print("imported session, zones filled", flush=True)
+print(f"imported session, {tracks} tracks, zones filled", flush=True)
 PY
 # Connect the plane stubs the router leaves behind, then check for real.
 "$CLI" pcb drc --severity-all --format json -o build/drc-all.json \
@@ -54,6 +64,7 @@ PY
 "$CLI" pcb drc --severity-all --format json -o build/drc-all.json \
     build/x68000-breakout.kicad_pcb >/dev/null
 "$KPY" hw/tidy_board.py
+"$KPY" hw/fix_last_gnd.py
 "$CLI" pcb drc --severity-all --format json -o build/drc-all.json \
     build/x68000-breakout.kicad_pcb | grep Found
 "$CLI" pcb export svg --layers F.Cu,B.Cu,In1.Cu,In2.Cu,F.SilkS,Edge.Cuts \
