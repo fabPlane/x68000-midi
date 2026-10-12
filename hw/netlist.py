@@ -112,7 +112,11 @@ KICAD_SYMBOLS = {
 }
 
 FOOTPRINT = {
-    "FPGA": "Package_DFN_QFN:ArtInChip_QFN-88-1EP_10x10mm_P0.4mm_EP6.74x6.74mm",
+    # Our own land pattern, not KiCad's ArtInChip one: that has 0.30 mm pads on a
+    # 0.40 mm pitch, i.e. a 0.10 mm copper gap, which is below JLCPCB's standard
+    # 0.127 mm capability and makes every adjacent pad pair a clearance error
+    # before anything is routed. See hw/make_qfn_footprint.py.
+    "FPGA": "x68k:QFN-88-1EP_10x10mm_P0.4mm_EP6.74x6.74mm_Standard",
     "LVC8T245": "Package_SO:TSSOP-24_4.4x7.8mm_P0.65mm",
     "LVC2G07": "Package_TO_SOT_SMD:SOT-363_SC-70-6",
     "LVC1G07": "Package_TO_SOT_SMD:SOT-23-5",

@@ -543,3 +543,22 @@ worth re-running at four once the board routes, since it halves the fab cost.
 
 **The lesson for the next board**: an anchor is an obstacle. Put them where the router wants targets,
 never where it wants room.
+
+### 2026-10-13 — removing the fence worked, and exposed the next thing
+
+With no anchors inside 12 mm of the FPGA: **92 unrouted → 23**, score 480 → 840, 13 minutes instead
+of 51. The fence really was the whole of the first problem.
+
+What that uncovered, in the 222 DRC violations left behind:
+
+| Finding | Detail |
+|---|---|
+| **The stock QFN-88 land pattern is not manufacturable at standard capability** | KiCad's `ArtInChip_QFN-88-1EP_10x10mm_P0.4mm` has 0.30 mm pads on a 0.40 mm pitch — a **0.10 mm** copper gap. That is below JLCPCB's standard 0.127 mm, and it made every adjacent pad pair of different nets a clearance error (84 of them) before a track was drawn. `hw/make_qfn_footprint.py` derives `x68k:QFN-88-...-_Standard` with 0.22 mm pads and a 0.18 mm gap, leaving positions and the exposed pad alone. |
+| **29 tracks came out at 0.112 mm** | freerouting squeezing through that same escape, below both the board minimum and standard capability. Expected to go away now the pads are narrower; if it does not, the escape needs a finer process or a different package. |
+
+**The 0.22 mm width needs checking against Gowin's package drawing before fab.** It is a normal IPC
+land width for a 0.4 mm pitch QFN, but normal is not verified, and this is the expensive part on the
+board.
+
+Worth revisiting once it routes: six layers was adopted on a wrong diagnosis and has never been
+tested against a clean escape. Four may well do, and halves the fab cost.
