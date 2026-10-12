@@ -40,9 +40,13 @@ def main() -> int:
         w, h = pcbnew.ToMM(size.x), pcbnew.ToMM(size.y)
         if max(w, h) > 2.0:
             continue                      # the exposed pad, left alone
-        if w < h:                         # pads on the left and right edges
+        # The pitch runs along the pad's *short* axis, so that is the one to
+        # thin. Getting this backwards shortens the pad, leaves the gap exactly
+        # as it was, and changes nothing but the solder area -- which is what
+        # the first version of this script did.
+        if w > h:                         # long in x: neighbours are above and below
             pad.SetSize(pcbnew.VECTOR2I(size.x, pcbnew.FromMM(PAD_W)))
-        else:                             # top and bottom
+        else:                             # long in y: neighbours are left and right
             pad.SetSize(pcbnew.VECTOR2I(pcbnew.FromMM(PAD_W), size.y))
         narrowed += 1
     DST_LIB.mkdir(parents=True, exist_ok=True)

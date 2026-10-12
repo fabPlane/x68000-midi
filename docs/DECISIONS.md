@@ -562,3 +562,19 @@ board.
 
 Worth revisiting once it routes: six layers was adopted on a wrong diagnosis and has never been
 tested against a clean escape. Four may well do, and halves the fab cost.
+
+### 2026-10-13 — the land pattern fix, second attempt
+
+The first version of `make_qfn_footprint.py` thinned the **wrong axis**. Pad 1 is 0.55 x 0.30 with
+its neighbours above and below, so the pitch runs along its 0.30 mm side — and the script resized the
+0.55 mm one, turning the pad into 0.22 x 0.30. That shortens the pad, reduces the solder area, and
+leaves the copper gap at exactly the 0.10 mm it started from. The 85 clearance errors came back
+unchanged, which was the clue: a fix that changes nothing is not a fix.
+
+Corrected: thin whichever dimension is the short one. Pads are now 0.55 x 0.22 on the left and right
+edges and 0.22 x 0.55 on the top and bottom, gap 0.18 mm on all four.
+
+Two scripting bugs in two days on this board, both of the same kind — code that ran successfully,
+reported success, and did the wrong thing. The via fence reported "93 plane vias" while walling the
+FPGA in; this reported "narrowed 97 pads" while leaving the gap alone. The guard that caught both was
+measuring the result rather than trusting the message.
