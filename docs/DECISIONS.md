@@ -441,3 +441,34 @@ in three places and would have silently poured copper past the board edge.
 
 Result: **0 DRC errors, 4 unconnected** (all GND) — one better than before the change, which is
 freerouting's run-to-run variation rather than anything the narrowing did.
+
+## 2026-10-12 — the logic board, and what the split costs
+
+`hw/logic.py` generates the other half: the FPGA, its in-package 8 MB PSRAM, the MIDI drivers and
+jacks, three rails, the JTAG header, the DIP switches and the oscillator. **47 parts, 87 nets, all
+checks passing, 60 of 63 usable FPGA pins.** No layout yet.
+
+Taken together the two boards *are* the single-card design, cut along the translators. The breakout
+keeps the fingers, the six translators and the plane split; the logic board takes everything after
+them. What the split buys is that a respin is a 47-part board instead of a 150 mm one, and the bus
+half — the part that is hardest to get right and cheapest to freeze — stops moving. What it costs is
+a 40-way ribbon carrying a 68000 bus and one more assembly.
+
+**The split forced a change to the breakout, and this is the useful finding.** The logic board's pin
+budget only closes if A1–A15 arrive at **1.8 V**: bank 3 is the only place fifteen more signals fit,
+and bank 3 must be 1.8 V because it carries the PSRAM. So the breakout now carries two reference
+voltages — VREF on header pin 1 for data, control and A16–A23; VREF_LOW on pin 3 for A1–A15 — and
+its address translators regroup accordingly: U3 takes A1–A8, U4 takes A9–A15 (seven lines, one
+spare), U5 takes A16–A23.
+
+Consequences worth stating plainly:
+
+* **CLK10M is gone** from the breakout. It was the eighth channel on U5 and the regrouping needed
+  that slot. No loss: the card runs from its own 27 MHz oscillator and the bus is asynchronous.
+* **A 3.3 V-only host gets 48 signals, not 63.** A Tang Console fits JP2, ties the two references
+  together and can then exercise a MIDI card's worth of bus but not the 8 MB window, because the
+  bank-3 pins are unusable at 3.3 V. Worth knowing before planning bench bring-up around it.
+* **VREF_LOW is routed, not poured.** It feeds two translators' B sides — tens of milliamps — so a
+  third split in the In2 plane would have bought nothing and complicated the two that matter.
+
+Breakout after the change: 0 DRC errors, 4 unconnected (all GND, the same two problems).

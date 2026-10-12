@@ -62,6 +62,24 @@ print(json.dumps({
     return json.loads(out[-1])
 
 
+def logic_stats() -> dict:
+    """Counts from the logic board's netlist — it has no PCB to measure yet."""
+    import importlib
+    sys.path.insert(0, str(ROOT / "hw"))
+    logic = importlib.import_module("logic")
+    d, fp = logic.build()
+    used: dict[str, int] = {}
+    for _, (_, bank) in fp.assigned.items():
+        used[bank] = used.get(bank, 0) + 1
+    free = fp.remaining()
+    return {
+        "parts": len(d.comps), "nets": len(d.nets),
+        "pins_33": used.get("1", 0) + used.get("2", 0),
+        "free_33": free.get("1", 0) + free.get("2", 0),
+        "pins_18": used.get("3", 0), "free_18": free.get("3", 0),
+    }
+
+
 def drc_summary() -> tuple[int, int, dict]:
     report = json.loads((ROOT / "build" / "drc-all.json").read_text())
     violations = report.get("violations", [])
@@ -99,6 +117,7 @@ def plate_svg() -> str:
 def main() -> int:
     errors, unconnected, kinds = drc_summary()
     stats = board_stats()
+    logic = logic_stats()
     renders = {
         "top": data_uri(VIEWS / "breakout-3d.png"),
         "bottom": data_uri(VIEWS / "breakout-3d-bottom.png"),
@@ -258,25 +277,46 @@ hard gold and the bevel are order notes that are not in the gerbers; and the
 BOM's LCSC column is deliberately empty. The full list is in
 <code>docs/FAB-BREAKOUT.md</code>.</div>
 
-<h2><small>02</small>Where the other half is</h2>
-<p>There is no companion board yet, and that is on purpose rather than an
-oversight. The breakout's ribbons are meant to reach <em>a dev board you already
-own</em> — the Tang Console 138K for the logic, a Tang Nano 9K for the PSRAM
-timing. The memory and MIDI as a product is the card below, which carries the
-FPGA, its in-package 8 MB PSRAM and the MIDI drivers all by itself and does not
-use the breakout at all.</p>
-<div class="callout"><b>The two-board option the right-angle headers open up</b>
-With the ribbons leaving in the plane of the card rather than up into the
-neighbouring slot, a second PCB can sit <em>behind</em> this one in the same
-slot, joined by a short ribbon: this card carries the fingers, the translators
-and the plane split; the logic card carries the FPGA, the memory and the MIDI
-jacks. Revising the logic half then costs one small board instead of a 150 mm
-one, and the breakout is the same PCB whether the other end is a Tang Console
-on the bench or the finished card in the machine. Not committed to — the
-single-card design is still the plan — but the headers no longer rule it out.
+<h2><small>02</small>Logic board <span class="pill warn">netlist only</span></h2>
+<p>The other half: the FPGA, its in-package 8 MB PSRAM, the MIDI drivers and
+jacks, the three rails and the JTAG header. It sits behind the breakout in the
+same slot — the slot takes 141 mm and the breakout uses 69 — joined by the two
+right-angle ribbons. Nothing on it touches the X68000 bus directly; the
+translators all live on the breakout.</p>
+
+<div class="grid2">
+  <div class="card">
+    <h3>Why split the card</h3>
+    <p>Taken together, these two boards <em>are</em> the single-card design cut
+    along the translators. Splitting costs a ribbon and gains the thing that
+    matters while a design is still moving: the bus half is hardest to get right
+    and cheapest to freeze, and the logic half is the one that gets revised. A
+    respin is then a {logic['parts']}-part board, not a 150 mm one.</p>
+    <p>The same breakout serves a Tang Console on the bench and this board in
+    the machine.</p>
+  </div>
+  <div class="card">
+    <h3>Pin budget, exactly</h3>
+    <div class="tbl"><table>
+      <tr><td>Parts / nets</td><td class="num">{logic['parts']} / {logic['nets']}</td></tr>
+      <tr><td>3.3 V pins (banks 1–2)</td><td class="num">{logic['pins_33']} used, {logic['free_33']} free</td></tr>
+      <tr><td>1.8 V pins (bank 3)</td><td class="num">{logic['pins_18']} used, {logic['free_18']} free</td></tr>
+      <tr><td>Layout</td><td class="num">not started</td></tr>
+    </table></div>
+    <p>Bank 3 is full and has to be: it carries the PSRAM, so it runs at 1.8 V,
+    and A1–A15 are the only signals that fit in it.</p>
+  </div>
 </div>
 
-<h2><small>03</small>X68000 MIDI card <span class="pill warn">netlist only</span></h2>
+<div class="callout"><b>Which is why the breakout carries two reference voltages</b>
+Fifteen address lines must arrive at 1.8 V and everything else at 3.3 V, so the
+breakout's translators split: VREF on header pin 1 feeds data, control and
+A16–A23; VREF_LOW on pin 3 feeds A1–A15. A host that does not care — a Tang
+Console, which is 3.3 V only — fits JP2 and ties them together, and then has 48
+signals to play with instead of 63. Enough for a MIDI card; not enough for the
+8 MB window.</div>
+
+<h2><small>03</small>Single-card alternative <span class="pill">on the shelf</span></h2>
 <div class="grid2">
   <div class="card">
     <h3>What it is</h3>

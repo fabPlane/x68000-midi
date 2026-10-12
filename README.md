@@ -8,7 +8,7 @@ Design brief and decisions: [midi_box/docs/x68000-midi.html](../midi_box/docs/x6
 
 | Path | What |
 |---|---|
-| `hw/` | [`netlist.py`](hw/netlist.py) — rev A netlist, Gowin `.cst`, review report · [`breakout.py`](hw/breakout.py) — the universal slot breakout · KiCad layout (not started) |
+| `hw/` | [`netlist.py`](hw/netlist.py) — the single-card design · [`breakout.py`](hw/breakout.py) — the slot breakout, placed and routed · [`logic.py`](hw/logic.py) — the logic board that sits behind it · `build_breakout.sh` runs place → pour → freeroute → check |
 | `mech/` | [`plate.py`](mech/plate.py) — the 176 × 20 × 2 mm slot cover plate |
 | `docs/boards.html` | every board on one page — 3D renders, all four copper layers, live counts (`hw/make_overview.py`) · `hw/lib/x68k.pretty` — the X68000 2 × 50 edge-connector footprint, from midiori · `gw1nr9_qn88p_pins.csv` — the FPGA's pin/bank table, extracted from Gowin UG803 |
 | `gateware/` | Amaranth: 68000 bus slave, YM3802 register file and transmitter, two-port card, a 68000 bus master for measuring, and a midiori reference model. 48 tests. PSRAM window to come |

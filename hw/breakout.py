@@ -30,6 +30,14 @@ Grouping follows the ribbons, not the connector: J2 carries everything a cycle
 needs (data, strobes, DTACK, interrupts) and J3 carries the address bus, so a
 card that never does DMA can ignore the spare lines on J3.
 
+**Two reference voltages, not one.** VREF sets the B side of the data, control
+and upper-address translators; VREF_LOW sets it for A1-A15. That split is not
+arbitrary: on the GW1NR-9 those fifteen address lines are the only ones that fit
+in bank 3, and bank 3 must run at 1.8 V because it carries the PSRAM. A host
+that does not care -- a Tang Console, which is 3.3 V only -- fits JP2 and ties
+them together, and then has 48 signals rather than 63 to play with, which is
+enough for a MIDI card and not enough for the 8 MB window.
+
 **The headers are right-angle.** The cable leaves in the plane of the card,
 toward the rear, rather than straight up into the neighbouring slot — which
 matters on the bench, and matters more if the other end is not a dev board but
@@ -55,7 +63,7 @@ ROOT = Path(__file__).resolve().parent.parent
 #: Slot nets that are not in the MIDI card's SLOT map but which a general
 #: breakout should still carry: the bus-master group and the 10 MHz clock.
 EXTRA_SLOT = {
-    "B2": "CLK10M", "B36": "EXREQ_N", "B37": "EXACK_N",
+    "B36": "EXREQ_N", "B37": "EXACK_N",
     "B46": "BR_N", "B47": "BG_N", "B48": "BGACK_N",
     "B40": "EXNMI_N", "A39": "EXBERR_N",
 }
@@ -70,7 +78,7 @@ J2_SIGNALS = (
 )
 J3_SIGNALS = (
     [f"SA{i}" for i in range(1, 24)]
-    + ["CLK10M", "EXREQ_N", "EXACK_N", "BR_N", "BG_N"]
+    + ["EXREQ_N", "EXACK_N", "BR_N", "BG_N"]
 )
 
 
@@ -85,7 +93,7 @@ def header(d: Design, ref: str, signals: list[str], host_side: str) -> None:
     d.wire("VREF", ref, "p1")
     d.wire("+5V_FUSED", ref, "p2")
     pins = [n for n in range(3, 39)]
-    grounds = [n for n in pins if (n - 3) % 5 == 4]
+    grounds = [n for n in pins if (n - 4) % 5 == 4]
     slots = [n for n in pins if n not in grounds]
     if len(signals) > len(slots):
         raise SystemExit(f"{ref}: {len(signals)} signals into {len(slots)} pins")
@@ -97,10 +105,11 @@ def header(d: Design, ref: str, signals: list[str], host_side: str) -> None:
         d.wire("GND", ref, f"p{n}")     # unused pins become more ground
 
 
-def translator(d: Design, ref: str, a_nets, b_nets, *, dir_net, populated=True):
+def translator(d: Design, ref: str, a_nets, b_nets, *, dir_net,
+               vccb="VREF", populated=True):
     d.add(ref, "LVC8T245", "SN74LVC8T245", dnp=not populated)
     d.wire("+5V", ref, "V_{CCA}")
-    d.wire("VREF", ref, "V_{CCB}")
+    d.wire(vccb, ref, "V_{CCB}")
     d.wire("GND", ref, "GND")
     d.wire(dir_net, ref, "DIR")
     d.wire("GND", ref, "~{OE}")
@@ -139,12 +148,17 @@ def build() -> Design:
                [f"HD{i}" for i in range(8)], dir_net="BUS_DIR_5V")
     translator(d, "U2", [f"SD{i}" for i in range(8, 16)],
                [f"HD{i}" for i in range(8, 16)], dir_net="BUS_DIR_5V")
+    # A1-A15 go to VREF_LOW because on a GW1NR-9 they land in bank 3, which
+    # must run at 1.8 V -- that bank carries the PSRAM. A16-A23 and everything
+    # else land in banks 1 and 2 at 3.3 V. The split therefore falls between
+    # A15 and A16, which is why U4 carries seven lines and not eight.
     translator(d, "U3", [f"SA{i}" for i in range(1, 9)],
-               [f"HA{i}" for i in range(1, 9)], dir_net="+5V")
-    translator(d, "U4", [f"SA{i}" for i in range(9, 17)],
-               [f"HA{i}" for i in range(9, 17)], dir_net="+5V")
-    translator(d, "U5", [f"SA{i}" for i in range(17, 24)] + ["CLK10M"],
-               [f"HA{i}" for i in range(17, 24)] + ["HCLK10M"], dir_net="+5V")
+               [f"HA{i}" for i in range(1, 9)], dir_net="+5V", vccb="VREF_LOW")
+    translator(d, "U4", [f"SA{i}" for i in range(9, 16)] + [None],
+               [f"HA{i}" for i in range(9, 16)] + [None], dir_net="+5V",
+               vccb="VREF_LOW")
+    translator(d, "U5", [f"SA{i}" for i in range(16, 24)],
+               [f"HA{i}" for i in range(16, 24)], dir_net="+5V")
     ctrl_in = ["AS_N", "UDS_N", "LDS_N", "RW", "IACK2_N", "IACK4_N",
                "EXRESET_N", "IDDIR"]
     translator(d, "U6", ctrl_in, [f"H{n}" for n in ctrl_in], dir_net="+5V")
@@ -171,7 +185,6 @@ def build() -> Design:
     host.update({f"SD{i}": f"HD{i}" for i in range(16)})
     host.update({f"SA{i}": f"HA{i}" for i in range(1, 24)})
     host["BUS_DIR"] = "BUS_DIR"
-    host["CLK10M"] = "HCLK10M"
     for n in ("EXACK_N", "BR_N", "BG_N"):
         host[n] = n                     # straight through, 5 V -- see notes
 
@@ -190,6 +203,9 @@ def build() -> Design:
     d.add("JP1", "R", "0R link: local 3.3 V -> VREF", dnp=True)
     d.wire("VREF_LOCAL", "JP1", "1")
     d.wire("VREF", "JP1", "2")
+    d.add("JP2", "R", "0R link: VREF -> VREF_LOW", dnp=True)
+    d.wire("VREF", "JP2", "1")
+    d.wire("VREF_LOW", "JP2", "2")
 
     d.add("F1", "R", "polyfuse 500mA")
     d.wire("+5V", "F1", "1")
@@ -200,11 +216,12 @@ def build() -> Design:
         d.wire(net, f"CB{i}", "1")
         d.wire("GND", f"CB{i}", "2")
     d.decouple("CA", 7, "+5V")          # one per translator A side + the AHCT
-    d.decouple("CV", 8, "VREF")         # B sides + the two '07s
+    d.decouple("CV", 6, "VREF")         # B sides + the two '07s
+    d.decouple("CL", 2, "VREF_LOW")
 
     # The three bus signals with nowhere else to go get a pad to scope: a
     # breakout is also the only convenient place to watch the machine misbehave.
-    for net in ("+5V", "VREF", "GND", "DTACK_N", "AS_N",
+    for net in ("+5V", "VREF", "VREF_LOW", "GND", "DTACK_N", "AS_N",
                 "BGACK_N", "EXBERR_N", "EXNMI_N"):
         ref = f"TP{net.strip('+')}"
         d.add(ref, "TP", net)
