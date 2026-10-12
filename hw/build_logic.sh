@@ -19,10 +19,10 @@ python3 - <<'PY'
 import re, pathlib
 p = pathlib.Path("build/x68000-logic.dsn")
 t = p.read_text()
-for layer in ("In1.Cu", "In2.Cu"):
+for layer in ("In1.Cu", "In4.Cu"):   # In2/In3 stay signal layers
     t = re.sub(r"(\(layer %s\s*\(type )signal(\))" % re.escape(layer), r"\1power\2", t)
 p.write_text(t)
-print("marked In1.Cu and In2.Cu as power layers", flush=True)
+print("marked In1.Cu and In4.Cu as power layers", flush=True)
 PY
 rm -f build/x68000-logic.ses
 java -Djava.awt.headless=true -jar "$JAR" \

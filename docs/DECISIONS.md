@@ -512,3 +512,34 @@ What it does need:
 The honest summary: the Console is a bring-up tool, and a hand-made pair of ribbons is the right
 amount of effort for it. Designing the breakout's pinout around one dev board would spoil it as a
 general instrument.
+
+### 2026-10-13 — I fenced the FPGA in, then blamed the layer count
+
+The logic board would not route, and the reason was mine. `route_logic.py` gave each of the FPGA's
+eighteen plane pads its own via anchor 7-10 mm from the package centre. The package's pads end at
+5 mm. That put **seventeen vias in the annulus between 5 and 12 mm** — exactly the ring every one of
+the sixty signal escapes has to cross — and then asked freerouting to get out through it.
+
+What that cost, in order:
+
+| Attempt | Result |
+|---|---|
+| 4 layers (In1 GND, In2 power), anchors ringing the FPGA | 85 of 165 unrouted, 46 violations, 21 min |
+| **6 layers** (In1 GND, In4 power, In2/In3 free), same anchors | **92 unrouted, 52 violations, 51 min — worse** |
+
+The six-layer run is the useful data point: adding two signal layers made it *worse*, which is the
+tell that the obstruction was local to the package and not a shortage of routing space. I had already
+written the four-layer failure up as "sixty signals cannot fan out on two signal layers", which was a
+plausible story and the wrong one.
+
+The fix: no anchors within 12 mm of the FPGA at all. Ground gets a 5 × 5 grid of thermal vias inside
+the exposed pad, which is what a QFN wants anyway; the supply pins reach the pours through the same
+coarse grid as everything else. Also dropped the default netclass to 0.15 mm track and clearance —
+freerouting routes to the netclass, not to the board minimum, and 0.2/0.2 leaves nothing around a
+0.4 mm pitch part.
+
+Six layers stays for now because it is not the variable under test, but it is probably unnecessary:
+worth re-running at four once the board routes, since it halves the fab cost.
+
+**The lesson for the next board**: an anchor is an obstacle. Put them where the router wants targets,
+never where it wants room.

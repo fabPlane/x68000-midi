@@ -150,10 +150,20 @@ def main() -> int:
     renumber(design)
 
     board = pcbnew.BOARD()
-    board.SetCopperLayerCount(4)
+    # Six layers, not four. The first attempt put GND and the power split on
+    # In1/In2 and left only F.Cu and B.Cu for signals: freerouting left 85 of
+    # 165 nets unrouted with 46 violations after 21 minutes. Sixty signals
+    # leaving a 10 mm square package and fanning across 110 mm of ribbon header
+    # need four signal layers, and at this size the extra two cost little.
+    board.SetCopperLayerCount(6)
     ds = board.GetDesignSettings()
     ds.m_TrackMinWidth = mm(0.15)      # 0.4 mm pitch QFN escapes need it
     ds.m_MinClearance = mm(0.15)
+    # Default the netclass to the minimum too: freerouting routes to the
+    # netclass, not the minimum, and 0.2/0.2 leaves no room round a QFN-88.
+    default = ds.m_NetSettings.GetDefaultNetclass()
+    default.SetTrackWidth(mm(0.15))
+    default.SetClearance(mm(0.15))
     ds.m_ViasMinSize = mm(0.45)
     ds.m_MinThroughDrill = mm(0.25)
 
@@ -221,7 +231,7 @@ def main() -> int:
     pcbnew.SaveBoard(str(path), board)
 
     print(f"{len(design.comps)} footprints, {len(nets)} nets")
-    print(f"board {WIDTH:.0f} x {HEIGHT:.0f} mm, 4 layers")
+    print(f"board {WIDTH:.0f} x {HEIGHT:.0f} mm, 6 layers")
     for label, items in (("UNPLACED", unplaced), ("OUTSIDE THE BOARD", off_board),
                          ("OVERLAPPING", collisions),
                          ("PADS NOT ON THE FOOTPRINT", sorted(set(missing)))):

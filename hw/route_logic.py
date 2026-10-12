@@ -8,10 +8,11 @@ than copying them; only the pour geometry differs, because this board has three
 supply voltages instead of two references and no edge-connector tab to work
 around.
 
-In1 is all ground. In2 splits three ways across the board's width, following
-where each rail is used: 3.3 V under the ribbons and the FPGA's 3.3 V banks,
-1.2 V as a small island under the FPGA core, 1.8 V down the MIDI side where
-bank 3 and the PSRAM supply sit. Signal routing is freerouting's, as before.
+Six layers. In1 is all ground and In4 is the power split -- 3.3 V under the
+ribbons and the FPGA's 3.3 V banks, 1.2 V as a small island under the core,
+1.8 V down the MIDI side where bank 3 and the PSRAM supply sit. In2 and In3 are
+left alone for the router, because with only F.Cu and B.Cu to work with it left
+85 of 165 nets unrouted.
 """
 
 from __future__ import annotations
@@ -34,12 +35,13 @@ X0, Y0, X1, Y1 = INSET, INSET, WIDTH - INSET, HEIGHT - INSET
 
 #: The FPGA sits at (40, 75) and is 10 mm square; its core rail only has to
 #: reach it, so 1.2 V is an island rather than a stripe.
+#: In1 is ground, In4 is the power split; In2 and In3 are left for the router.
 PLANES = [
     ("GND", pcbnew.In1_Cu, [(X0, Y0), (X1, Y0), (X1, Y1), (X0, Y1)]),
-    ("+3V3", pcbnew.In2_Cu, [(X0, Y0), (33.0, Y0), (33.0, Y1), (X0, Y1)]),
-    ("+1V2", pcbnew.In2_Cu, [(33.5, 62.0), (47.0, 62.0), (47.0, 88.0),
+    ("+3V3", pcbnew.In4_Cu, [(X0, Y0), (33.0, Y0), (33.0, Y1), (X0, Y1)]),
+    ("+1V2", pcbnew.In4_Cu, [(33.5, 62.0), (47.0, 62.0), (47.0, 88.0),
                              (33.5, 88.0)]),
-    ("+1V8", pcbnew.In2_Cu, [(47.5, Y0), (X1, Y0), (X1, Y1), (47.5, Y1)]),
+    ("+1V8", pcbnew.In4_Cu, [(47.5, Y0), (X1, Y0), (X1, Y1), (47.5, Y1)]),
 ]
 PLANE_NETS = {net for net, _, _ in PLANES}
 
@@ -49,7 +51,9 @@ ANCHOR_REGIONS = {
     "+1V8": (48.5, Y0 + 1, X1 - 1, Y1 - 1),
     "+1V2": (34.5, 63.0, 46.0, 87.0),
 }
-ANCHOR_PITCH = 14.0   # 8 mm put 215 vias on a 70 x 150 board and freerouting never finished
+ANCHOR_PITCH = 14.0
+#: No anchors inside this radius of the FPGA; the escapes need the room.
+KEEPOUT = 12.0   # 8 mm put 215 vias on a 70 x 150 board and freerouting never finished
 
 
 def main() -> int:
@@ -60,27 +64,25 @@ def main() -> int:
     items = obstacles(board)
     made = 0
 
-    # The FPGA's own supply pins are the hardest to reach once routing exists,
-    # so give each one an anchor just outside the package first.
-    for fp in board.GetFootprints():
-        if fp.GetReference() != "U1":
-            continue
-        cx, cy = to_mm(fp.GetPosition().x), to_mm(fp.GetPosition().y)
-        for pad in fp.Pads():
-            net = pad.GetNet()
-            if net.GetNetname() not in PLANE_NETS:
-                continue
-            x, y = pad_xy(pad)
-            dx, dy = x - cx, y - cy
-            norm = max((dx * dx + dy * dy) ** 0.5, 1e-6)
-            for reach in (7.0, 8.0, 9.0, 10.0):
-                cand = (cx + dx / norm * reach, cy + dy / norm * reach)
-                if via_clear(items, *cand, net.GetNetname()):
-                    add_track(board, net, pcbnew.F_Cu, (x, y), cand)
-                    add_via(board, net, *cand)
-                    items.append((cand[0], cand[1], VIA_D / 2, net.GetNetname()))
-                    made += 1
-                    break
+    # Nothing goes near the FPGA. The first version gave each of its eighteen
+    # plane pads an anchor 7-10 mm from the centre -- a ring of vias 2-4 mm
+    # outside a package whose pads end at 5 mm, which is precisely the annulus
+    # all sixty signal escapes have to cross. Freerouting left 85 of 165 nets
+    # unrouted on four layers and 92 on six; the layer count was never the
+    # problem, the fence was.
+    #
+    # Ground gets thermal vias inside the exposed pad instead, which is what a
+    # QFN wants anyway, and the supply pins reach the pours through the grid
+    # below like everything else.
+    fpga = next(f for f in board.GetFootprints() if f.GetReference() == "U1")
+    cx, cy = to_mm(fpga.GetPosition().x), to_mm(fpga.GetPosition().y)
+    gnd = board.FindNet("GND")
+    for i in (-2, -1, 0, 1, 2):
+        for j in (-2, -1, 0, 1, 2):
+            x, y = cx + i * 1.3, cy + j * 1.3
+            add_via(board, gnd, x, y)
+            items.append((x, y, VIA_D / 2, "GND"))
+            made += 1
 
     for net_name, (x0, y0, x1, y1) in ANCHOR_REGIONS.items():
         net = board.FindNet(net_name)
@@ -88,7 +90,8 @@ def main() -> int:
         while y <= y1:
             x = x0
             while x <= x1:
-                if via_clear(items, x, y, net_name):
+                near_fpga = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5 < KEEPOUT
+                if not near_fpga and via_clear(items, x, y, net_name):
                     add_via(board, net, x, y)
                     items.append((x, y, VIA_D / 2, net_name))
                     made += 1
