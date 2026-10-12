@@ -172,7 +172,10 @@ def build() -> tuple[Design, FpgaPins]:
 
     d.add("J6", "JTAG", "JTAG 2x5 1.27mm")
     d.wire("+1V8", "J6", "VREF")
-    for g in ("GND1", "GND2", "GND3"):
+    # Pin 7 is the Cortex header's KEY position, usually removed and otherwise
+    # left floating. Tying it to ground is the convention and it stops a GND
+    # track routed past it from being a clearance error against a netless pad.
+    for g in ("GND1", "GND2", "GND3", "KEY"):
         d.wire("GND", "J6", g)
     for sig, pin in (("TMS", "5"), ("TCK", "6"), ("TDI", "7"), ("TDO", "8")):
         d.wire(f"JTAG_{sig}", "J6", sig)

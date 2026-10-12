@@ -41,6 +41,7 @@ pcbnew.ZONE_FILLER(b).Fill(b.Zones())
 pcbnew.SaveBoard("build/x68000-logic.kicad_pcb", b)
 print(f"imported session, {tracks} tracks, zones filled", flush=True)
 PY
+"$KPY" hw/widen_thin.py build/x68000-logic.kicad_pcb
 "$CLI" pcb drc --severity-all --format json -o build/drc-logic.json \
     build/x68000-logic.kicad_pcb | grep Found
 "$CLI" pcb export svg --layers F.Cu,B.Cu,In1.Cu,In2.Cu,F.SilkS,Edge.Cuts \
