@@ -224,7 +224,8 @@ bevel and the card-guide fit — for a few dollars.</p>
 
 <div class="grid2">
   <figure><img src="{renders['top']}" alt="Breakout, top">
-    <figcaption>Top. Fingers left, translators in a column, the two ribbons right.</figcaption></figure>
+    <figcaption>Top. Fingers left, translators in a column, the two right-angle
+    ribbon headers right — cables leave in the plane of the card.</figcaption></figure>
   <figure><img src="{renders['bottom']}" alt="Breakout, bottom">
     <figcaption>Bottom. The address translators sit here, under the others.</figcaption></figure>
 </div>
@@ -252,7 +253,25 @@ hard gold and the bevel are order notes that are not in the gerbers; and the
 BOM's LCSC column is deliberately empty. The full list is in
 <code>docs/FAB-BREAKOUT.md</code>.</div>
 
-<h2><small>02</small>X68000 MIDI card <span class="pill warn">netlist only</span></h2>
+<h2><small>02</small>Where the other half is</h2>
+<p>There is no companion board yet, and that is on purpose rather than an
+oversight. The breakout's ribbons are meant to reach <em>a dev board you already
+own</em> — the Tang Console 138K for the logic, a Tang Nano 9K for the PSRAM
+timing. The memory and MIDI as a product is the card below, which carries the
+FPGA, its in-package 8 MB PSRAM and the MIDI drivers all by itself and does not
+use the breakout at all.</p>
+<div class="callout"><b>The two-board option the right-angle headers open up</b>
+With the ribbons leaving in the plane of the card rather than up into the
+neighbouring slot, a second PCB can sit <em>behind</em> this one in the same
+slot, joined by a short ribbon: this card carries the fingers, the translators
+and the plane split; the logic card carries the FPGA, the memory and the MIDI
+jacks. Revising the logic half then costs one small board instead of a 150 mm
+one, and the breakout is the same PCB whether the other end is a Tang Console
+on the bench or the finished card in the machine. Not committed to — the
+single-card design is still the plan — but the headers no longer rule it out.
+</div>
+
+<h2><small>03</small>X68000 MIDI card <span class="pill warn">netlist only</span></h2>
 <div class="grid2">
   <div class="card">
     <h3>What it is</h3>
@@ -277,7 +296,7 @@ BOM's LCSC column is deliberately empty. The full list is in
   </div>
 </div>
 
-<h2><small>03</small>Slot cover plate <span class="pill ok">drawn</span></h2>
+<h2><small>04</small>Slot cover plate <span class="pill ok">drawn</span></h2>
 <p>176 × 20 × 2 mm, outline taken from midiori's — a known-good fit — with the
 hole sizes and positions measured out of their STL rather than guessed. Three
 3.5 mm bores at 22 mm pitch; the middle one sits exactly where theirs does, so

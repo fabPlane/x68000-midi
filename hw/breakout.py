@@ -29,6 +29,15 @@ Two build options, one PCB:
 Grouping follows the ribbons, not the connector: J2 carries everything a cycle
 needs (data, strobes, DTACK, interrupts) and J3 carries the address bus, so a
 card that never does DMA can ignore the spare lines on J3.
+
+**The headers are right-angle.** The cable leaves in the plane of the card,
+toward the rear, rather than straight up into the neighbouring slot — which
+matters on the bench, and matters more if the other end is not a dev board but
+a second PCB sitting behind this one in the same slot. That is the shape a
+production two-board set would take: this card carries the fingers and the
+translators, a logic card behind it carries the FPGA, its memory and the MIDI
+drivers, and a short ribbon joins them. Revising the logic half then costs one
+small board instead of a 150 mm one.
 """
 
 from __future__ import annotations
@@ -72,7 +81,7 @@ def header(d: Design, ref: str, signals: list[str], host_side: str) -> None:
     pin 2 is +5 V from the slot behind a fuse, pin 39/40 are ground, and every
     fourth pin in between is ground.
     """
-    d.add(ref, "IDC40", f"2x20 IDC -> {host_side}")
+    d.add(ref, "IDC40", f"2x20 IDC right-angle -> {host_side}")
     d.wire("VREF", ref, "p1")
     d.wire("+5V_FUSED", ref, "p2")
     pins = [n for n in range(3, 39)]

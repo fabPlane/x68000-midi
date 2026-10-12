@@ -81,9 +81,11 @@ PLACEMENT = {
     "U10": (66.0, 176.0, 0, "F"),     # local 3.3 V LDO (DNP)
     "JP1": (76.0, 182.0, 0, "F"),
     "F1": (59.0, 182.0, 90, "F"),
-    # Ribbons. This footprint's origin is pad 1 and its 20 rows run +Y from
-    # there, so rotation 0 already has the long axis down the card. They are
-    # through-hole, so either side can reach them.
+    # Ribbons, right-angle. The footprint's origin is pad 1, its 20 rows run
+    # +Y from there, and its shroud extends +13.8 mm in X -- so at rotation 0
+    # the long axis runs down the card and the cable leaves toward the rear
+    # plate, not up into the next slot. Through-hole, so either side reaches
+    # them.
     "J2": (96.0, 48.0, 0, "F"),
     "J3": (96.0, 112.0, 0, "F"),
 }

@@ -127,7 +127,7 @@ FOOTPRINT = {
     "R": "Resistor_SMD:R_0603_1608Metric",
     "C": "Capacitor_SMD:C_0603_1608Metric",
     "EDGE": "x68k:x68000_expansion",
-    "IDC40": "Connector_IDC:IDC-Header_2x20_P2.54mm_Vertical",
+    "IDC40": "Connector_IDC:IDC-Header_2x20_P2.54mm_Horizontal",
     "TP": "TestPoint:TestPoint_Pad_D1.0mm",
 }
 

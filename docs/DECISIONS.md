@@ -392,3 +392,34 @@ the board itself, the MIDI card's status, and the cover plate drawn from
 `mech/plate.py`'s own constants. Self-contained, as the enclosure guides are.
 `mech/plate.py` now imports cadquery inside its functions so those constants can
 be read without pulling in OCP.
+
+## 2026-10-12 — right-angle ribbon headers, and the two-board question
+
+`IDC-Header_2x20_P2.54mm_Horizontal` instead of the vertical part. The pads are
+identical — two columns 2.54 mm apart over 48.26 mm — so the netlist and the routing are untouched;
+only the body changes, from 11 mm wide to 16.2 mm, extending +13.8 mm from pad 1. At rotation 0 that
+puts the cable exit toward the rear plate.
+
+Right on its own merits: a vertical header sends the ribbon straight up out of the card and into the
+neighbouring slot, which is wrong in a machine whose cards are 20 mm apart. But the reason it came up
+is better than that.
+
+**There is no companion board, and that is the current plan rather than a gap.** The breakout's
+ribbons are meant to reach a dev board already on the bench — Tang Console 138K for logic, Tang Nano
+9K for PSRAM timing. Memory and MIDI as a *product* is the full-size card in `hw/netlist.py`, which
+carries the FPGA, its in-package 8 MB PSRAM and the MIDI drivers by itself and does not use the
+breakout at all.
+
+With the cable now leaving in the plane of the card, a second option exists that did not before: a
+two-board set in one slot, the breakout at the fingers and a logic card behind it, joined by a short
+ribbon. Its merits, honestly weighed:
+
+| For | Against |
+|---|---|
+| Revising the logic half costs one small board, not a 150 × 76 mm one | Two PCBs, two assembly setups, a ribbon that can come loose |
+| The breakout is then the same PCB on the bench and in the machine | A 40-way ribbon carrying a 68000 bus is worse electrically than 20 mm of trace |
+| The bus half is the part that is hardest to get right and cheapest to freeze | The single card already has a complete netlist |
+
+Not committed to. The single-card design stands; the headers simply no longer rule the other out.
+
+Rebuild after the change: 0 DRC errors, 6 unconnected (all GND, same two underlying problems).
