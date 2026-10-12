@@ -46,7 +46,10 @@ def board_stats() -> dict:
 import json, pcbnew
 b = pcbnew.LoadBoard("build/x68000-breakout.kicad_pcb")
 tracks = [t for t in b.Tracks() if t.Type() != pcbnew.PCB_VIA_T]
+box = b.GetBoardEdgesBoundingBox()
 print(json.dumps({
+    "width": round(pcbnew.ToMM(box.GetWidth())),
+    "height": round(pcbnew.ToMM(box.GetHeight())),
     "tracks": len(tracks),
     "vias": len(list(b.Tracks())) - len(tracks),
     "footprints": len(list(b.GetFootprints())),
@@ -217,7 +220,9 @@ a{{color:inherit}}
 
 <h2><small>01</small>Slot breakout <span class="pill ok">routed</span></h2>
 <p>The whole X68000 expansion bus on two ribbon cables: 2 × 50 gold fingers,
-six SN74LVC8T245 level translators, two 2 × 20 IDC headers. Plug an FPGA or MCU
+six SN74LVC8T245 level translators, two 2 × 20 right-angle IDC headers whose
+shrouds stop 3 mm short of the rear edge, so whatever plugs in sits immediately
+alongside rather than across a stub of empty board. Plug an FPGA or MCU
 board on the other end and it becomes any expansion card you like. Built first
 because it proves the three mechanical unknowns — the finger footprint, the 45°
 bevel and the card-guide fit — for a few dollars.</p>
@@ -235,7 +240,7 @@ bevel and the card-guide fit — for a few dollars.</p>
 
 <div class="tbl"><table>
 <tr><th>Property</th><th class="num">Value</th><th>Note</th></tr>
-<tr><td>Size</td><td class="num">76 × 150 mm</td><td>150 mm is fixed by the slot; the depth is ours</td></tr>
+<tr><td>Size</td><td class="num">{stats['width']} × {stats['height']} mm</td><td>150 mm is fixed by the slot; the depth is ours, set by where the ribbon leaves</td></tr>
 <tr><td>Stackup</td><td class="num">4 layer</td><td>signal · GND · +5 V/VREF · signal</td></tr>
 <tr><td>Footprints</td><td class="num">{stats['footprints']}</td><td>29 parts to fit, 2 DNP</td></tr>
 <tr><td>Nets</td><td class="num">{stats['nets']}</td><td>every signal net routed</td></tr>

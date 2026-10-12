@@ -423,3 +423,21 @@ ribbon. Its merits, honestly weighed:
 Not committed to. The single-card design stands; the headers simply no longer rule the other out.
 
 Rebuild after the change: 0 DRC errors, 6 unconnected (all GND, same two underlying problems).
+
+### 2026-10-12 — 76 mm to 69 mm, so the next board can sit against it
+
+`RIGHT` drops from 120 to 113. The right-angle shrouds now end 3.2 mm from the rear edge instead of
+8 mm, so whatever plugs in — a ribbon to a Tang board on the bench, or a companion logic card in the
+machine — sits immediately alongside rather than across a stub of empty board. 7 mm less PCB per
+card as a bonus.
+
+The geometry works inside the case: the slot takes midiori's 141 mm, so a 69 mm breakout at the
+finger end leaves ~70 mm of depth behind it for a logic card, with the plate at the far end. Both
+boards stay inside the machine.
+
+One source of truth now: `RIGHT` lives in `layout_breakout.py` and `route_breakout.py` and
+`fix_planes.py` import it, because the pour outlines and anchor regions had the old 118/119 hard-coded
+in three places and would have silently poured copper past the board edge.
+
+Result: **0 DRC errors, 4 unconnected** (all GND) — one better than before the change, which is
+freerouting's run-to-run variation rather than anything the narrowing did.

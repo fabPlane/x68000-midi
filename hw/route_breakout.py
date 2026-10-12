@@ -32,8 +32,12 @@ from pathlib import Path
 
 import pcbnew
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from layout_breakout import RIGHT  # noqa: E402  single source of the board depth
+
 ROOT = Path(__file__).resolve().parent.parent
 BOARD = ROOT / "build" / "x68000-breakout.kicad_pcb"
+EDGE = RIGHT - 1.0            # keep copper off the board edge
 
 TRACK_W = 0.25          # mm; plenty for a 5 mA MIDI loop and a 68000 bus
 PLANE_CLEAR = 0.3
@@ -54,11 +58,11 @@ VIA_D, VIA_DRILL = 0.6, 0.3
 #: One polygon per pour, not two abutting rectangles: same-net zones that share
 #: an edge are reported as intersecting rather than merged.
 PLANES = [
-    ("GND", pcbnew.In1_Cu, [(46, 48), (58, 48), (58, 41), (119, 41),
-                            (119, 187), (58, 187), (58, 174), (46, 174)]),
+    ("GND", pcbnew.In1_Cu, [(46, 48), (58, 48), (58, 41), (EDGE, 41),
+                            (EDGE, 187), (58, 187), (58, 174), (46, 174)]),
     ("+5V", pcbnew.In2_Cu, [(46, 48), (58, 48), (58, 41), (70, 41),
                             (70, 187), (58, 187), (58, 174), (46, 174)]),
-    ("VREF", pcbnew.In2_Cu, [(70.5, 41), (119, 41), (119, 187), (70.5, 187)]),
+    ("VREF", pcbnew.In2_Cu, [(70.5, 41), (EDGE, 41), (EDGE, 187), (70.5, 187)]),
 ]
 PLANE_NETS = {net for net, _, _ in PLANES}
 
@@ -177,9 +181,9 @@ def stub_clear(items, a, b, net) -> bool:
 
 #: Where each net's anchors may go: the region its pour covers.
 ANCHOR_REGIONS = {
-    "GND": (59.0, 43.0, 118.0, 186.0),
+    "GND": (59.0, 43.0, EDGE - 1.0, 186.0),
     "+5V": (59.0, 43.0, 69.0, 186.0),
-    "VREF": (71.5, 43.0, 118.0, 186.0),
+    "VREF": (71.5, 43.0, EDGE - 1.0, 186.0),
 }
 ANCHOR_PITCH = 9.0
 

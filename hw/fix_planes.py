@@ -27,6 +27,9 @@ from pathlib import Path
 
 import pcbnew
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from layout_breakout import RIGHT  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 BOARD = ROOT / "build" / "x68000-breakout.kicad_pcb"
 REPORT = ROOT / "build" / "drc-all.json"
@@ -155,7 +158,7 @@ def add_via(board, net, x, y):
 #: 2.54 mm pitch a surface pour is a row of slivers that fills as isolated
 #: islands, which DRC then reports as unconnected GND zones. The tab keeps its
 #: inner-layer pour, which is what the ground fingers actually need.
-GROUND_OUTLINE = [(58, 41), (119, 41), (119, 187), (58, 187)]
+GROUND_OUTLINE = [(58, 41), (RIGHT - 1.0, 41), (RIGHT - 1.0, 187), (58, 187)]
 
 
 def add_surface_ground(board) -> None:

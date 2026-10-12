@@ -7,15 +7,15 @@ drill, CPL and BOM land in `build/fab/`.
 
 | | |
 |---|---|
-| Board | 76 × 150 mm, 4 layer, 1.6 mm |
-| DRC | **0 errors**, 88 warnings (83 dangling vias, 5 silkscreen) |
+| Board | 69 × 150 mm, 4 layer, 1.6 mm |
+| DRC | **0 errors**, 72 warnings (67 dangling vias, 5 silkscreen) |
 | Routing | **every signal net routed** |
-| Unconnected | **5 items, all GND** — see below |
+| Unconnected | **4 items, all GND** — see below |
 | Parts | 29 to fit, 2 DNP |
 
 ## Not ready to order
 
-Five GND connections are still open, and they are two problems, not five. Each
+Four GND connections are still open, and they are two problems, not five. Each
 is a minute in pcbnew with the ratsnest showing.
 
 | Where | What it needs |

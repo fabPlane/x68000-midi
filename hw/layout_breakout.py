@@ -42,7 +42,12 @@ KICAD_FP = Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints
 LOCAL_FP = ROOT / "hw" / "lib"
 
 # --- board outline, in mm, midiori's frame --------------------------------
-RIGHT = 120.0           # plate end; midiori's is 185
+# Plate end; midiori's is 185. Ours is set by where the ribbon leaves: the
+# right-angle shroud reaches 13.8 mm past pad 1 of a header at x 98, so the
+# board stops at 113 and the cable exits within ~1 mm of the edge. A companion
+# logic board can then butt straight up against it, and both still sit inside
+# the machine -- the slot is deep enough for midiori's 141 mm.
+RIGHT = 113.0
 OUTLINE = [
     (44, 48), (45, 47), (54, 47), (54, 43), (58, 39),
     (RIGHT - 4, 39), (RIGHT, 43), (RIGHT, 185), (RIGHT - 4, 189),
