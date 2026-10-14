@@ -94,8 +94,8 @@ a{color:inherit}
   <div class="lcd">
     <b>SLOT BREAKOUT</b>
     <div class="row"><span>DRC</span><span>0 errors</span></div>
-    <div class="row"><span>UNCONNECTED</span><span>5</span></div>
-    <div class="row"><span>TRACKS</span><span>1457</span></div>
+    <div class="row"><span>UNCONNECTED</span><span>1</span></div>
+    <div class="row"><span>TRACKS</span><span>1467</span></div>
   </div>
 </header>
 
@@ -125,14 +125,14 @@ bevel and the card-guide fit — for a few dollars.</p>
 <tr><td>Stackup</td><td class="num">4 layer</td><td>signal · GND · +5 V/VREF · signal</td></tr>
 <tr><td>Footprints</td><td class="num">43</td><td>29 parts to fit, 2 DNP</td></tr>
 <tr><td>Nets</td><td class="num">117</td><td>every signal net routed</td></tr>
-<tr><td>Tracks / vias</td><td class="num">1457 / 331</td><td>freerouting, then plane stitching</td></tr>
+<tr><td>Tracks / vias</td><td class="num">1467 / 335</td><td>freerouting, then plane stitching</td></tr>
 <tr><td>Copper pours</td><td class="num">5</td><td>GND on In1 and both outer layers; +5 V and VREF share In2</td></tr>
-<tr><td>DRC</td><td class="num">0 errors</td><td>65 via dangling, 6 silk over copper, 1 silk overlap</td></tr>
-<tr><td>Unconnected</td><td class="num">5</td><td>all GND: one ground finger and the pour islands</td></tr>
+<tr><td>DRC</td><td class="num">0 errors</td><td>65 via dangling, 6 silk over copper, 1 track dangling, 1 silk overlap</td></tr>
+<tr><td>Unconnected</td><td class="num">1</td><td>all GND: one ground finger and the pour islands</td></tr>
 </table></div>
 
 <div class="callout"><b>Not ready to order</b>
-5 GND connections still need a via each, placed by hand in pcbnew with
+1 GND connections still need a via each, placed by hand in pcbnew with
 the ratsnest showing. Beyond that: there is no schematic, so ERC has never run;
 the finger geometry is copied from midiori and has never been in a real slot;
 hard gold and the bevel are order notes that are not in the gerbers; and the

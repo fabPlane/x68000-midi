@@ -965,3 +965,42 @@ worth less if this part were vague:
 * **Nothing has been in a slot.** The edge-finger geometry is still midiori's,
   copied and never tested in an X68000, and the hard gold and 45 degree bevel
   are order notes that do not appear in any gerber.
+
+### 2026-10-14 — the plane gaps, closed with vias
+
+`close_gaps.py` could only draw a track on one outer layer, and most of what
+was left needed a *via*: an F.Cu item and a B.Cu item at nearly the same place.
+On the breakout, a +5 V track on each layer both at (58.225, 173.000); U1's
+pad 22 (GND, F.Cu) against U3's pad 22 (GND, B.Cu) 0.55 mm away on the other
+side. No same-layer track can join those at all.
+
+gpt-6.1-sol, through the `codex` CLI with write access to the workspace,
+extended the pass with through vias, layer-aware stubs and hole-to-hole
+spacing against every drilled hole including same-net plated pads and NPTH.
+Measured independently afterwards, not taken on report:
+
+| | errors | unconnected |
+|---|---|---|
+| logic | 3 → **3** | 3 → **2** |
+| breakout | 0 → **0** | 6 → **1** |
+
+Six of nine closed, no signal copper altered, no new errors. One new warning on
+the breakout: a +5 V stub on B.Cu whose far end codex connected through a via,
+leaving the near end loose — electrically fine, untidy.
+
+Three gaps resist, and all three are the same shape: a pad or track that needs
+a via, in copper too dense to land one.
+
+* logic, GND: U1 pad 24 at (36.2, 79.8) to the ring via at (36.0, 79.8),
+  1.02 mm apart, inside the FPGA's escape annulus. Ground still reaches the
+  package through the exposed pad's 25 thermal vias, so this is one perimeter
+  ground pin not bonded rather than a floating ground.
+* logic, +3.3 V: C1's pad at (39.225, 82.0) to its via at (36.7, 79.0), with
+  bottom-side signal tracks across the route. C1 is one of four core
+  decouplers; losing it costs a little high-frequency impedance.
+* breakout, GND: U3's pad 22 to U1's ground group, with HD0/HA1 copper in the
+  way.
+
+Each wants a human deciding which existing track to nudge aside — a different
+kind of judgement from "is there room where everything else already is", and
+the point where this tooling has done what it usefully can.
