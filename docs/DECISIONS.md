@@ -1004,3 +1004,69 @@ a via, in copper too dense to land one.
 Each wants a human deciding which existing track to nudge aside — a different
 kind of judgement from "is there room where everything else already is", and
 the point where this tooling has done what it usefully can.
+
+### 2026-10-14 — the last three, and a hypothesis that did not survive
+
+Three unconnected plane items were left: U1 pad 24's ground and C1's +3.3 V pad
+on the logic board, U3 pad 22's ground on the breakout. Four approaches, all
+measured.
+
+**1. A via anywhere on the island.** `fix_planes` asks for 0.2 mm of clearance
+around a via and steps along tracks in 0.25 mm hops; `tidy_board` asks for
+0.35 mm. The board's own rule is 0.15 mm. Re-searched at 0.15 mm, sampled at
+0.02 mm, restricted to the island rather than the whole net: **no via position
+exists on any of the three.** Not a tolerance problem.
+
+**2. A stub out to clear space, then a via** (`hw/stub_to_plane.py`): a fan of
+24 directions x 9 lengths from every endpoint of the island, on both outer
+layers, stub and via tested against all other nets' copper and every drilled
+hole. Nothing on any of the three. Two bugs found and fixed on the way, both
+worth keeping: the search seeded from *both* items of an unconnected pair,
+which merges two groups that are unconnected by definition and had it happily
+"fix" the side that already had a via; and the island walk followed shared
+track endpoints but not *through pads*, so it stopped at C10's pad 2 and never
+saw the rest of the group.
+
+What the search then showed is why nothing fits:
+
+* **C1's +3.3 V pad is an orphan** — no tracks at all — and the B.Cu beneath it
+  carries HLDS_N, HEXRESET_N, HIRQ4_N, HIACK2_N, HUDS_N, HD13 and HD14 as
+  parallel diagonals about 0.3 mm apart. A through via needs 0.75 mm of clear
+  space on every layer.
+* **U1 pad 24's group** is pad 24, a short chain, and C10's ground pad; F.Cu
+  above is the QFN's own pad field and B.Cu below is that same diagonal band.
+* **U3 pad 22** is sandwiched on B.Cu between HA1 0.45 mm below and VREF_LOW
+  0.35 mm above. In1's ground plane *does* cover the spot — it needs only a
+  via, and a via will not fit.
+
+**3. Move the decoupling off the escape.** The hypothesis was that
+`anchor_of()` puts every FPGA decoupler at `U1.y + 4`, due south, which is
+exactly where sixteen data lines leave on B.Cu. Anchored them north instead and
+re-routed: C1 moved 16 mm, from (40, 82) to (40, 66), and eleven of sixteen
+caps went north of U1 where two had been.
+
+**The same two items failed.** So the hypothesis was wrong, and it cost an
+error (3 → 4). Reverted, and the better board restored.
+
+What the logs say instead: freerouting ends every run with seven to fifteen
+nets unrouted, and its *optimisation* stage reliably makes that worse — 9 → 11,
+5 → 15, 7 → 11 across runs. These are not misplaced parts, they are the residue
+of a router that does not finish, and the plane passes cannot rescue a pad the
+router never touched.
+
+**4. What is actually left to do**, then: nudge a neighbouring track aside and
+hand-place the via. That is a judgement about which existing route can afford
+to move, and it is the one thing in this whole sequence that genuinely wants a
+person looking at the board.
+
+**What it costs to leave them.** Each is a redundant connection:
+
+| | | |
+|---|---|---|
+| U3 pad 22 | 1 of **4** ground pins on that translator | other three connected |
+| U1 pad 24 | 1 of **7** perimeter grounds | plus the exposed pad's 25 thermal vias |
+| C1 | 1 of **4** FPGA +3.3 V decouplers | three remain; C1 itself does nothing |
+
+No net is left without a connection and no signal is unrouted. For five
+prototype boards that is a defect to note, not a reason to hold the order —
+but it is a defect, and it is the first thing to fix in a revision.
