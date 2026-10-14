@@ -117,11 +117,14 @@ def add_track(board, net, layer, a, b, width=TRACK_W):
     return t
 
 
-def add_via(board, net, x, y):
+def add_via(board, net, x, y, diameter=None, drill=None):
+    """`diameter`/`drill` default to this module's constants, which is what the
+    breakout uses; the logic board passes the smaller 0.45/0.25 explicitly so
+    its vias match its netclass."""
     v = pcbnew.PCB_VIA(board)
     v.SetPosition(pt(x, y))
-    v.SetWidth(mm(VIA_D))
-    v.SetDrill(mm(VIA_DRILL))
+    v.SetWidth(mm(VIA_D if diameter is None else diameter))
+    v.SetDrill(mm(VIA_DRILL if drill is None else drill))
     v.SetViaType(pcbnew.VIATYPE_THROUGH)
     v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
     v.SetNet(net)
@@ -162,8 +165,12 @@ def obstacles(board):
     return out
 
 
-def via_clear(items, x, y, net) -> bool:
-    r = VIA_D / 2 + 0.3
+def via_clear(items, x, y, net, diameter=None) -> bool:
+    """`diameter` defaults to this module's VIA_D. The logic board passes its
+    own 0.45 mm: asking for 0.6 mm of clearance around a 0.45 mm via rejected
+    most of its inward fanout ring, which is the same mistake as add_via()
+    reading the global instead of the netclass."""
+    r = (VIA_D if diameter is None else diameter) / 2 + 0.3
     for px, py, size, pnet in items:
         limit = r + size if pnet != net else VIA_DRILL + 0.5
         if (px - x) ** 2 + (py - y) ** 2 < limit ** 2:

@@ -42,8 +42,41 @@ can do the DSN/SES round trip that `kicad-cli` cannot. It finishes with `fix_pla
 Result: **every signal net routed, 0 DRC errors at every severity**, with 12 plane stubs and the
 silkscreen left to tidy by hand.
 
-Next: route and order the breakout, Tang Console bring-up of the MIDI path over it, PSRAM
-read-latency measurement on a Tang Nano 9K, then the main PCB.
+## Getting boards made
+
+```
+sh hw/build_logic.sh                       # mate check, place, pour, route, DRC
+sh hw/build_breakout.sh
+python3 hw/check_mating.py                 # the two ribbons, pin by pin
+<kicad-python> hw/make_fab.py logic        # gerbers, drill, BOM, CPL, hand-solder list
+<kicad-python> hw/make_fab.py breakout
+```
+
+Each board's package lands in `build/fab/<board>/`. Upload the gerber zip and the BOM and CPL
+to JLCPCB; the hand-solder CSV is what *we* fit.
+
+Three things to know before ordering.
+
+**Not everything goes to the assembler.** A part goes on the CPL only if its footprint on this
+board has been checked against the part you can actually buy. Everything through-hole fails
+that by definition, and so does the 1.27 mm JTAG header, so J1–J6, SW1 and U3 on the logic
+board and J2/J3 on the breakout are soldered here. For five boards that is minutes of work and
+it removes the whole class of "the footprint did not match the part".
+
+**JP3 on the breakout must be fitted** to power the logic board — its only supply input is
+header pin 2, and that pin is dead until JP3 is. JP3 is DNP on purpose: a header pin carrying
+5 V by default would destroy a 3.3 V host, and Sipeed warn exactly that about the Tang Console.
+
+**Check the rotations in JLCPCB's order preview.** KiCad's rotation convention is not JLCPCB's
+and it differs per package; their preview is the only authoritative view. `make_fab.py` prints
+the parts where a 180° error is a dead board rather than a cosmetic nit.
+
+`docs/DECISIONS.md` has the reasoning for every part choice, including the two regulators that
+turned out not to be manufactured any more and the 3.3 V rail that could not stay in a SOT-23-5.
+
+Next: Tang Console bring-up of the MIDI path over the breakout, PSRAM read-latency measurement
+on a Tang Nano 9K, and a board-level wrapper for the gateware — `Card` is the core, and a
+bitstream still needs bidirectional data pins, a PLL from 27 MHz, and reset.
 
 ## Licence
 

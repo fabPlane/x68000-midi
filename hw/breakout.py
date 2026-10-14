@@ -86,14 +86,24 @@ def header(d: Design, ref: str, signals: list[str], host_side: str) -> None:
     """Lay a signal list into a 2x20 IDC with grounds and the supply pins.
 
     Pin 1 is VREF (the host's I/O voltage, which sets the translators' B side),
-    pin 2 is +5 V from the slot behind a fuse, pin 39/40 are ground, and every
-    fourth pin in between is ground.
+    pin 2 is +5 V from the slot behind a fuse, **pin 3 is VREF_LOW** (the 1.8 V
+    the A1-A15 translators need, because those lines land in the GW1NR-9's
+    bank 3), pin 39/40 are ground, and every fifth pin in between is ground.
+
+    Pin 3 was ground here until 2026-10-14, and VREF_LOW did not reach the
+    header at all -- it existed only behind JP2, a DNP link from VREF. The
+    logic board meanwhile wires its own 1.8 V regulator *output* to pin 3 of
+    both ribbons. Mating the two boards would therefore have shorted U5's
+    output to ground: no bank 3 I/O, no PSRAM, and a regulator holding a dead
+    short. Nothing in either board's own checks could see it; it took comparing
+    the two headers pin by pin.
     """
     d.add(ref, "IDC40", f"2x20 IDC right-angle -> {host_side}")
     d.wire("VREF", ref, "p1")
     d.wire("+5V_HOST", ref, "p2")
-    pins = [n for n in range(3, 39)]
-    grounds = [n for n in pins if (n - 4) % 5 == 4]
+    d.wire("VREF_LOW", ref, "p3")
+    pins = [n for n in range(4, 39)]
+    grounds = [n for n in pins if n % 5 == 3]
     slots = [n for n in pins if n not in grounds]
     if len(signals) > len(slots):
         raise SystemExit(f"{ref}: {len(signals)} signals into {len(slots)} pins")
@@ -135,9 +145,15 @@ def build() -> Design:
     # so the host's 3.3 V cannot drive them directly. One 74AHCT1G34 (TTL
     # thresholds at 5 V) translates the host's BUS_DIR; everything else only
     # ever flows slot -> host, so its DIR is strapped.
-    d.add("U7", "LVC1G07", "74AHCT1G34")
+    # SN74AHCT1G125 rather than the 74AHCT1G34 this started with: the '34 is
+    # not stocked at LCSC, at JLCPCB, or anywhere else searchable. The '125 is
+    # the same AHCT family and the same SOT-23-5, and becomes a plain buffer
+    # with ~OE tied low. What could *not* be substituted is the family: an
+    # LVC1G34 on 5 V needs 3.5 V to read a one, and the host gives 3.3.
+    d.add("U7", "AHCT1G125", "SN74AHCT1G125", lcsc="C7484")
     d.wire("+5V", "U7", "VCC")
     d.wire("GND", "U7", "GND")
+    d.wire("GND", "U7", "OE_N")     # always enabled
     d.wire("BUS_DIR", "U7", "A")
     d.wire("BUS_DIR_5V", "U7", "Y")
 
@@ -233,6 +249,49 @@ def build() -> Design:
         ref = f"TP{net.strip('+')}"
         d.add(ref, "TP", net)
         d.wire(net, ref, "1")
+
+    # --- what to actually order -------------------------------------------
+    # Same rule as the logic board: a verified LCSC number for everything the
+    # assembler fits, and anything through-hole left for us.
+    LCSC = {
+        ("C", "100nF"): "C14663",         # CC0603KRX7R9BB104, Basic
+        ("C", "10uF"): "C19702",          # CL10A106KP8NNNC, Basic
+        # SN74LVC8T245PWR. TI mark this NRND and JLCPCB's stock reads zero as
+        # often as not, so check it at order time. If it has gone, TI's own
+        # successor SN74LV8T245PWR is the **same TSSOP-24**, so swapping it is
+        # a BOM edit and not a board change -- which is the only reason six of
+        # them on one board is an acceptable risk.
+        ("LVC8T245", "SN74LVC8T245"): "C27643",
+        ("LVC2G07", "74LVC2G07"): "C37708",    # SN74LVC2G07DBVR, SOT-23-6
+        ("R", "0R link: VREF -> VREF_LOW"): "C21189",
+        ("R", "0R link: local 3.3 V -> VREF"): "C21189",
+        ("R", "0R link: slot +5 V -> header pin 2"): "C21189",
+        ("LDO", "AP2112K-3.3"): "C51118",      # DNP alternate 3.3 V source
+        # Ruilon SMD0603P050TF: 500 mA hold, 6 V, 0603 PTC. Same land pattern
+        # as an 0603 resistor, which is why it is modelled as one.
+        ("R", "polyfuse 500mA"): "C20789",
+    }
+    HAND = {
+        "J2": "through-hole 2x20 IDC",
+        "J3": "through-hole 2x20 IDC",
+        # DNP, and deliberately so, but it still has to go on for our own pair:
+        # the logic board's only supply input is header pin 2.
+        "JP3": "DNP by default — FIT THIS to power the logic board from the "
+               "slot; leave it off for a 3.3 V host (5 V on a Tang Console's "
+               "headers destroys it)",
+        "JP2": "DNP — fit only for a host that cannot supply 1.8 V on pin 3, "
+               "which ties VREF_LOW up to VREF instead",
+        "JP1": "DNP — fit only to source VREF from this board instead of the host",
+    }
+    for ref, comp in d.comps.items():
+        key = (comp["kind"], comp["value"])
+        if not comp["lcsc"] and key in LCSC:
+            comp["lcsc"] = LCSC[key]
+        if ref in HAND:
+            comp["hand_reason"] = HAND[ref]
+            if not comp["dnp"]:
+                comp["hand"] = True
+
 
     d.notes += [
         "VREF comes from the host on pin 1 of both headers and sets the "

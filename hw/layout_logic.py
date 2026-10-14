@@ -55,10 +55,20 @@ PLACEMENT = {
     "J3": (64.0, 122.0, 270, "F"),      # OUT
     "J4": (64.0, 100.0, 270, "F"),      # OUT 2
     "J5": (64.0, 78.0, 270, "F"),       # IN (DNP)
-    "U4": (30.0, 10.0, 0, "F"),         # 3.3 V — clear of the header column
-    "U5": (40.0, 10.0, 0, "F"),         # 1.8 V
-    "U6": (50.0, 10.0, 0, "F"),         # 1.2 V
-    "X1": (50.0, 90.0, 0, "F"),         # 27 MHz, near its PLL pin
+    # The regulators sit at the pins they feed, not in a row along the bottom
+    # edge. +3.3 V is a plane, so U4 only has to be near where the slot's 5 V
+    # arrives, which is the ribbon; +1.8 V and +1.2 V are routed nets with one
+    # and four destinations, so those two go next to the FPGA. U5 is west
+    # because the single 1.8 V pin (12) is on the package's west face at
+    # (35.2, 75.2); U6 is east, between the two eastern core pins.
+    "U4": (28.0, 100.0, 0, "F"),        # 3.3 V, by the ribbon's 5 V
+    "U5": (28.0, 75.0, 0, "F"),         # 1.8 V, due west of pin 12
+    # Due east of the FPGA is not available: the horizontal 3.5 mm jacks reach
+    # 19 mm inboard, and J5 alone owns x 50.7-69.7 over y 73.5-82.7, which is
+    # exactly the package's latitude. These are the free pockets north and
+    # south of it.
+    "U6": (48.5, 86.5, 0, "F"),         # 1.2 V, 8 mm from core pin 45
+    "X1": (48.5, 67.0, 0, "F"),         # 27 MHz; the clock pin 63 is at (44.8, 72)
     "SW1": (46.0, 20.0, 0, "F"),
     "D2": (56.0, 20.0, 0, "F"),
 }
@@ -113,8 +123,22 @@ def overlaps(a, b, gap=CLEARANCE) -> bool:
 
 
 def anchor_of(design, ref: str) -> tuple[float, float]:
-    """Beside whatever placed part this one shares a net with — decoupling
-    then lands next to the thing it decouples."""
+    """Where this part wants to be: beside the part it serves.
+
+    `design.near` names that part explicitly, which is the only reliable
+    answer for a capacitor -- every 100 nF on +3.3 V is wired identically, so
+    the rail cannot tell you which device it decouples. Following the rail
+    instead put all three regulators' bulk capacitors next to the FPGA, 75 mm
+    from their regulators, and the oscillator's and the opto's decoupling
+    there too.
+
+    Anything with no stated home still falls back to a shared rail, then to
+    the middle of the board.
+    """
+    home = design.near.get(ref)
+    if home in PLACEMENT:
+        x, y, _, _ = PLACEMENT[home]
+        return x, y + 4.0
     for net, nodes in design.nets.items():
         if net == "GND" or not any(r == ref for r, _ in nodes):
             continue
@@ -139,7 +163,7 @@ def first_fit(fp, anchor, taken):
         box = bbox_mm(fp)
         if box[0] < x0 or box[1] < y0 or box[2] > x1 or box[3] > y1:
             continue
-        if any(overlaps(box, t) for t, side in taken if side == "F"):
+        if any(overlaps(box, t) for t, side, _ in taken if side == "F"):
             continue
         return x, y
     return None
@@ -150,14 +174,20 @@ def main() -> int:
     renumber(design)
 
     board = pcbnew.BOARD()
-    # Six layers, not four. The first attempt put GND and the power split on
-    # In1/In2 and left only F.Cu and B.Cu for signals: freerouting left 85 of
-    # 165 nets unrouted with 46 violations after 21 minutes. Sixty signals
-    # leaving a 10 mm square package and fanning across 110 mm of ribbon header
-    # need four signal layers, and at this size the extra two cost little.
-    board.SetCopperLayerCount(6)
+    # Four layers: F.Cu signal, In1 ground, In2 +3.3 V, B.Cu signal.
+    #
+    # Six was adopted after a four-layer run left 85 of 165 nets unrouted --
+    # but that run, and the six-layer run that did *worse* (92), both had a
+    # ring of via anchors sitting in the annulus every escape has to cross.
+    # The layer count was never what was wrong, so four is worth a fair test:
+    # it halves the fab cost.
+    board.SetCopperLayerCount(4)
     ds = board.GetDesignSettings()
-    ds.m_TrackMinWidth = mm(0.15)      # 0.4 mm pitch QFN escapes need it
+    # The board minimum is the fab's capability (JLCPCB standard, 0.127 mm);
+    # the netclass below is the design intent (0.15 mm) that freerouting aims
+    # at. Keeping them apart means a track the router had to pinch near the
+    # QFN is a track at the edge of what JLC will make, not a DRC error.
+    ds.m_TrackMinWidth = mm(0.127)
     ds.m_MinClearance = mm(0.15)
     # Default the netclass to the minimum too: freerouting routes to the
     # netclass, not the minimum, and 0.2/0.2 leaves no room round a QFN-88.
@@ -166,6 +196,13 @@ def main() -> int:
     default.SetClearance(mm(0.15))
     ds.m_ViasMinSize = mm(0.45)
     ds.m_MinThroughDrill = mm(0.25)
+    # Set the netclass vias too, not just the minimums. Leaving the netclass at
+    # its 0.6/0.3 default put 0.6 mm vias on the whole board -- 0.15 mm of
+    # extra radius each, which is what turned the corridor past the MODE1 via
+    # into a clearance error the router could only solve by pinching a track
+    # to 0.112 mm.
+    default.SetViaDiameter(mm(0.45))
+    default.SetViaDrill(mm(0.25))
 
     nets = {}
     for name in sorted(design.nets):
@@ -210,9 +247,10 @@ def main() -> int:
             off_board.append(f"{ref} {tuple(round(v, 1) for v in box)}")
         if ref in EDGE_PARTS and box[2] > WIDTH:
             off_board.append(f"{ref} hangs off the rear edge: {box[2]:.1f} > {WIDTH}")
-        if any(overlaps(box, t) for t, s in taken if s == side):
-            collisions.append(ref)
-        taken.append((box, side))
+        hit = [name for t, s, name in taken if s == side and overlaps(box, t)]
+        if hit:
+            collisions.append(f"{ref} with {'/'.join(hit)}")
+        taken.append((box, side, ref))
         if comp["dnp"]:
             fp.SetDNP(True)
         have = {p.GetNumber() for p in fp.Pads()}
@@ -231,7 +269,8 @@ def main() -> int:
     pcbnew.SaveBoard(str(path), board)
 
     print(f"{len(design.comps)} footprints, {len(nets)} nets")
-    print(f"board {WIDTH:.0f} x {HEIGHT:.0f} mm, 6 layers")
+    print(f"board {WIDTH:.0f} x {HEIGHT:.0f} mm, "
+          f"{board.GetCopperLayerCount()} layers")
     for label, items in (("UNPLACED", unplaced), ("OUTSIDE THE BOARD", off_board),
                          ("OVERLAPPING", collisions),
                          ("PADS NOT ON THE FOOTPRINT", sorted(set(missing)))):

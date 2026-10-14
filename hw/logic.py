@@ -207,23 +207,98 @@ def build() -> tuple[Design, FpgaPins]:
 
     # --- rails -------------------------------------------------------------
     # The slot's 5 V arrives over the ribbon and is the only input.
-    for ref, part, vin, vout in (("U4", "AP2112K-3.3", "+5V_SLOT", "+3V3"),
-                                 ("U5", "AP2127K-1.8", "+3V3", "+1V8"),
-                                 ("U6", "AP2127K-1.2", "+3V3", "+1V2")):
-        d.add(ref, "LDO", part)
+    # The AP2127K-1.8 and -1.2 this started with are not buyable: neither is
+    # on LCSC, Future shows zero global stock on the 1.8 V part with a 16-week
+    # lead, and RS has discontinued it. The ME6211 family replaces both -- same
+    # SOT-23-5, same pinout (VIN/GND/CE/NC/VOUT), and it is what Sipeed puts on
+    # the Tang Nano 9K's 1.2 V core, which is this same GW1NR-9.
+    #
+    # The 3.3 V rail is a different package on purpose. It feeds the other two,
+    # so it carries ~255 mA at a 1.7 V drop from the slot's 5 V: 0.43 W, which
+    # a SOT-23-5 cannot shed (65-110 K of rise, inside a closed case). The
+    # AMS1117 in SOT-223 has a 2.0 x 3.8 mm tab and is a JLCPCB Basic part.
+    # It has no enable pin, hence the LDO3 kind.
+    for ref, kind, part, lcsc, vin, vout in (
+            ("U4", "LDO3", "AMS1117-3.3", "C6186", "+5V_SLOT", "+3V3"),
+            ("U5", "LDO", "ME6211C18M5G-N", "C236671", "+3V3", "+1V8"),
+            ("U6", "LDO", "ME6211C12M5G-N", "C236672", "+3V3", "+1V2")):
+        d.add(ref, kind, part, lcsc=lcsc)
         d.wire(vin, ref, "VIN")
-        d.wire(vin, ref, "EN")
+        if "EN" in d.comps[ref]["pins"]:
+            d.wire(vin, ref, "EN")      # tie enable high; AMS1117 has none
         d.wire(vout, ref, "VOUT")
         d.wire("GND", ref, "GND")
 
-    for i, net in enumerate(("+5V_SLOT", "+3V3", "+1V8", "+1V2")):
+    # Bulk capacitance belongs at its regulator, not wherever a shared rail
+    # happens to lead: the first version of the placer put all three
+    # regulators' bulk caps 75 mm away from them, next to the FPGA.
+    for i, (net, home) in enumerate((("+5V_SLOT", "U4"), ("+3V3", "U4"),
+                                     ("+1V8", "U5"), ("+1V2", "U6"))):
         d.add(f"CB{i}", "C", "10uF")
         d.wire(net, f"CB{i}", "1")
         d.wire("GND", f"CB{i}", "2")
-    d.decouple("CA", 4, "+3V3")      # FPGA banks 1/2 and VCCX
-    d.decouple("CL", 1, "+1V8")      # bank 3 and the PSRAM
-    d.decouple("CC", 4, "+1V2")      # core
-    d.decouple("CM", 3, "+3V3")      # the '07, the opto, the oscillator
+        d.near[f"CB{i}"] = home
+    d.decouple("CA", 4, "+3V3", near="U1")   # FPGA banks 1/2 and VCCX
+    d.decouple("CL", 1, "+1V8", near="U1")   # bank 3 and the PSRAM
+    d.decouple("CC", 4, "+1V2", near="U1")   # core
+    # One each for the '07, the opto and the oscillator -- three different
+    # devices on the same rail, which is exactly the case a rail-following
+    # placer gets wrong.
+    d.decouple("CM1_", 1, "+3V3", near="U2")
+    d.decouple("CM2_", 1, "+3V3", near="U3")
+    d.decouple("CM3_", 1, "+3V3", near="X1")
+
+    # --- what to actually order -------------------------------------------
+    #
+    # (kind, value) -> LCSC number. Every one of these was read off the
+    # JLCPCB/LCSC part page, not recalled: the first attempt at this BOM
+    # specified two regulators that are not manufactured in any quantity any
+    # more, which is the failure mode worth guarding against.
+    #
+    # The rule for what goes to the assembler: a part whose *footprint on this
+    # board* has been checked against the part you can actually buy. Everything
+    # through-hole, and the one SMD part whose land pattern has not been
+    # checked, is marked `hand` -- it stays on the board and in the netlist and
+    # comes off the CPL, to be soldered here. For five boards that is minutes
+    # of work and it removes the whole class of "the footprint did not match".
+    LCSC = {
+        ("C", "100nF"): "C14663",        # CC0603KRX7R9BB104, 50 V X7R, Basic
+        ("C", "10uF"): "C19702",         # CL10A106KP8NNNC, 10 V X5R, Basic
+        ("R", "10k"): "C25804",          # 0603WAF1002T5E, 1%, Basic
+        ("R", "1k"): "C21190",           # 0603WAF1001T5E, 1%, Basic
+        ("R", "220"): "C22962",          # 0603WAF2200T5E, 1%, Basic
+        ("R", "0R"): "C21189",           # 0603WAF0000T5E jumper, Basic
+        ("DIODE", "1N4148"): "C81598",   # 1N4148W, SOD-123
+        ("LED", "status"): "C2286",      # KT-0603R, red
+        ("LVC2G07", "74LVC2G07"): "C37708",   # SN74LVC2G07DBVR, TI, SOT-23-6
+        ("OSC", "27 MHz"): "C507381",    # TXC 7X27000043, SMD3225-4P, +-50 ppm
+    }
+
+    #: Fitted, but soldered here rather than by the assembler. The reason is
+    #: recorded because "why is this not on the CPL" is the first question
+    #: anyone will ask.
+    HAND = {
+        "J1": "through-hole 2x20 IDC",
+        "J2": "through-hole 2x20 IDC",
+        "J3": "through-hole 3.5 mm jack",
+        "J4": "through-hole 3.5 mm jack",
+        "J5": "through-hole 3.5 mm jack",
+        "U3": "DIP-6 opto; through-hole",
+        "SW1": "through-hole DIP switch",
+        # 1.27 mm SMD, and the land pattern here has *not* been checked against
+        # a buyable part. C5160761 (DEALON DZ127S-22-10-55, 2x5P 1.27 mm SMD)
+        # is the candidate; verify its drawing against
+        # PinHeader_2x05_P1.27mm_Vertical_SMD before putting it on the CPL.
+        "J6": "fine-pitch header, footprint unverified",
+    }
+
+    for ref, comp in d.comps.items():
+        key = (comp["kind"], comp["value"])
+        if not comp["lcsc"] and key in LCSC:
+            comp["lcsc"] = LCSC[key]
+        if ref in HAND:
+            comp["hand"] = True
+            comp["hand_reason"] = HAND[ref]
 
     d.notes += [
         "The breakout supplies VREF (3.3 V) on header pin 1 and VREF_LOW "

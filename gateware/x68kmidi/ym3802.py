@@ -53,7 +53,7 @@ The whole card is one 108 MHz clock domain: 108 MHz / 31250 = 3456 and
 tick needs a second clock or a fractional divider.
 """
 
-from amaranth import Cat, Module, Signal
+from amaranth import Array, Cat, Const, Module, Signal
 from amaranth.lib import wiring
 from amaranth.lib.fifo import SyncFIFOBuffered
 from amaranth.lib.wiring import In, Out
@@ -149,6 +149,24 @@ class Ym3802(wiring.Component):
         imr = Signal(4)
         clkm = Signal()
         version_index = Signal(range(len(version)))
+        # The version string as a mux tree, not a chain of comparators.
+        #
+        # This used to be `for i, byte in enumerate(version): with m.If(
+        # version_index == i)`, which is 38 equality tests in a priority chain
+        # feeding `rdata` combinationally -- and `rdata` feeds the bus slave's
+        # registered read data. nextpnr put the critical path right through it:
+        # 9.52 ns from ym1.version_index to slave1.rdata_r, for a measured
+        # ceiling of 105.02 MHz against the 108 MHz this card runs at.
+        #
+        # An Array indexed by a signal elaborates to a balanced mux instead,
+        # which is log-depth rather than linear. Registering it as well costs a
+        # cycle of latency that nothing can observe: `rdata` is sampled
+        # continuously while the slave is idle, and the 68000 holds an address
+        # valid for tens of nanoseconds before ~AS, which the slave then takes
+        # two more cycles to synchronise.
+        version_byte = Signal(8)
+        m.d.sync += version_byte.eq(Array([Const(b, 8) for b in version])
+                                    [version_index])
         reg_num = Signal(8)
         m.d.comb += reg_num.eq(Cat(self.reg_addr, 0, group))
 
@@ -228,9 +246,7 @@ class Ym3802(wiring.Component):
                     with m.Case(0x96):
                         m.d.comb += self.rdata.eq(0xFF)
                     with m.Case(0xF5):
-                        for i, byte in enumerate(version):
-                            with m.If(version_index == i):
-                                m.d.comb += self.rdata.eq(byte)
+                        m.d.comb += self.rdata.eq(version_byte)
                     # 0x36 and 0x74 read as 0x00, like every unmapped register.
 
         # --- writes -----------------------------------------------------

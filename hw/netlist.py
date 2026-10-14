@@ -69,6 +69,10 @@ def symbol_pins(lib: str, name: str) -> dict[str, list[str]]:
 HAND_PINS: dict[str, dict[str, str]] = {
     # Diodes AP2112K / AP2127K, SOT-25.
     "LDO": {"VIN": "1", "GND": "2", "EN": "3", "NC": "4", "VOUT": "5"},
+    # A 3-pin SOT-223 regulator: no enable, and the tab is the output. Needed
+    # because the 3.3 V rail feeds the other two and cannot be done in a
+    # SOT-23-5 -- see the power budget in docs/DECISIONS.md.
+    "LDO3": {"GND": "1", "VOUT": "2", "VIN": "3"},
     # 4-pad SMD oscillator (SG-3225 and every compatible).
     "OSC": {"EN": "1", "GND": "2", "OUT": "3", "VCC": "4"},
     "LED": {"A": "1", "K": "2"},
@@ -86,6 +90,13 @@ HAND_PINS: dict[str, dict[str, str]] = {
                 "1Y": "6"},
     # SOT-23-5 single open-drain buffer.
     "LVC1G07": {"NC": "1", "A": "2", "GND": "3", "Y": "4", "VCC": "5"},
+    # A 3-state buffer standing in for a plain one, with ~OE strapped low. The
+    # 74AHCT1G34 this replaced is not stocked anywhere; the AHCT *family* is
+    # the requirement, not the gate -- its TTL input thresholds are what let
+    # the host's 3.3 V drive a DIR pin referenced to the slot's 5 V. An LVC
+    # part in the same package would need 3.5 V to read a one and is therefore
+    # not a substitute, however well stocked it is.
+    "AHCT1G125": {"OE_N": "1", "A": "2", "GND": "3", "Y": "4", "VCC": "5"},
     # DIP-6: 1 LED anode, 2 LED cathode, 3 NC, 4 out, 5 GND, 6 VCC.
     "H11L1": {"LED_A": "1", "LED_K": "2", "NC": "3", "OUT": "4", "GND": "5",
               "VCC": "6"},
@@ -118,10 +129,16 @@ FOOTPRINT = {
     # before anything is routed. See hw/make_qfn_footprint.py.
     "FPGA": "x68k:QFN-88-1EP_10x10mm_P0.4mm_EP6.74x6.74mm_Standard",
     "LVC8T245": "Package_SO:TSSOP-24_4.4x7.8mm_P0.65mm",
-    "LVC2G07": "Package_TO_SOT_SMD:SOT-363_SC-70-6",
+    # SOT-23-6, not the SOT-363 this started with: the only 74LVC2G07 actually
+    # stocked is SN74LVC2G07DBVR (C37708, TI, SOT-23-6). The LCSC listing for
+    # the part in a small package is X2-DFN1409-6, not SOT-363. Identical
+    # pinout, and 0.95 mm pitch is easier to assemble than 0.65.
+    "LVC2G07": "Package_TO_SOT_SMD:SOT-23-6",
     "LVC1G07": "Package_TO_SOT_SMD:SOT-23-5",
+    "AHCT1G125": "Package_TO_SOT_SMD:SOT-23-5",
     "H11L1": "Package_DIP:DIP-6_W7.62mm",
     "LDO": "Package_TO_SOT_SMD:SOT-23-5",
+    "LDO3": "Package_TO_SOT_SMD:SOT-223-3_TabPin2",
     "OSC": "Oscillator:Oscillator_SMD_Abracon_ASE-4Pin_3.2x2.5mm",
     # A real *stereo* jack. The QingPu WQP-PJ398SM used here first is a mono
     # TS jack with a tip switch — pads S, T and TN, no ring at all — which
@@ -135,7 +152,11 @@ FOOTPRINT = {
     "R": "Resistor_SMD:R_0603_1608Metric",
     "C": "Capacitor_SMD:C_0603_1608Metric",
     "EDGE": "x68k:x68000_expansion",
-    "IDC40": "Connector_IDC:IDC-Header_2x20_P2.54mm_Horizontal",
+    # Narrowed pads: 1.70 mm on a 2.54 mm grid leaves 0.84 mm between
+    # neighbours and two 0.15 mm tracks need 0.75, which is how freerouting
+    # came to short HD2 to HD3 inside J1's pad field. See
+    # hw/make_idc_footprint.py.
+    "IDC40": "x68k:IDC-Header_2x20_P2.54mm_Horizontal_Narrow",
     "TP": "TestPoint:TestPoint_Pad_D1.0mm",
 }
 
@@ -144,6 +165,7 @@ SUPPLIES = {
     "LVC8T245": {"V_{CCA}": "VCCA", "V_{CCB}": "VCCB", "GND": "GND"},
     "LVC2G07": {"VCC": "VCC", "GND": "GND"},
     "LVC1G07": {"VCC": "VCC", "GND": "GND"},
+    "AHCT1G125": {"VCC": "VCC", "GND": "GND"},
     "H11L1": {"VCC": "VCC", "GND": "GND"},
     "OSC": {"VCC": "VCC", "GND": "GND"},
 }
@@ -249,10 +271,22 @@ class Design:
         self.comps: dict[str, dict] = {}
         self.nets: dict[str, list[tuple[str, str]]] = defaultdict(list)
         self.notes: list[str] = []
+        #: ref -> the ref it belongs beside. A decoupling capacitor is only
+        #: decoupling if it is next to the pin it serves, and which pin that is
+        #: cannot be read back off the netlist: every 100 nF on +3V3 looks
+        #: alike. The placer reads this instead of guessing from shared rails.
+        self.near: dict[str, str] = {}
 
-    def add(self, ref, kind, value, *, lcsc="", dnp=False, pins=None):
+    def add(self, ref, kind, value, *, lcsc="", dnp=False, hand=False,
+            pins=None):
+        """`dnp` means not fitted at all. `hand` means fitted, but soldered by
+        hand rather than by the assembly house -- the through-hole connectors,
+        the DIP switch and the DIP-6 opto, which JLCPCB would either not stock
+        or charge through-hole assembly for. They stay on the board and in the
+        netlist; they are simply left off the CPL."""
         self.comps[ref] = {"kind": kind, "value": value, "lcsc": lcsc,
-                           "dnp": dnp, "pins": pins or part_pins(kind),
+                           "dnp": dnp, "hand": hand,
+                           "pins": pins or part_pins(kind),
                            "footprint": FOOTPRINT[kind]}
         return ref
 
@@ -266,12 +300,14 @@ class Design:
         for number in comp["pins"][pin_name]:
             self.nets[net].append((ref, number))
 
-    def decouple(self, ref_prefix, n, net, value="100nF"):
+    def decouple(self, ref_prefix, n, net, value="100nF", near=None):
         for i in range(n):
             r = f"{ref_prefix}{i + 1}"
             self.add(r, "C", value)
             self.wire(net, r, "1")
             self.wire("GND", r, "2")
+            if near:
+                self.near[r] = near
 
 
 def build() -> tuple[Design, FpgaPins]:
@@ -664,6 +700,7 @@ def renumber(d: Design) -> None:
     d.comps = {mapping.get(r, r): c for r, c in d.comps.items()}
     d.nets = {n: [(mapping.get(r, r), p) for r, p in nodes]
               for n, nodes in d.nets.items()}
+    d.near = {mapping.get(r, r): mapping.get(t, t) for r, t in d.near.items()}
 
 
 def main() -> int:

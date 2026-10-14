@@ -14,6 +14,10 @@ CLI=/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli
 JAR=${FREEROUTING_JAR:-/Users/hyper/projects/tensorfleet/freerouting-otel/build/libs/freerouting-current-executable.jar}
 PASSES=${PASSES:-20}
 
+# The two boards only mate if their ribbons agree pin for pin, and
+# neither board's own checks can see the other's.
+"$KPY" hw/make_idc_footprint.py
+python3 hw/check_mating.py
 "$KPY" hw/layout_breakout.py
 "$KPY" hw/route_breakout.py
 "$KPY" - <<'PY'
@@ -41,7 +45,10 @@ PY
 # output went through a `|| true` pipe, the run looked like a success and left
 # an unrouted board behind. The guard below is the second line of defence.
 rm -f build/x68000-breakout.ses
-java -Djava.awt.headless=true -jar "$JAR" \
+# -Xmx: without a bound the JVM grew to 9.3 GB on the logic board and
+# spent its time in GC -- 11% CPU after 21 minutes, no progress. The
+# runs that finish peak around 3.8 GB.
+java -Xmx6g -Djava.awt.headless=true -jar "$JAR" \
     -de build/x68000-breakout.dsn -do build/x68000-breakout.ses \
     -mp "$PASSES" -mt 4 < /dev/null 2>&1 \
     | grep -E "Auto-routing stage completed|Optimization stage completed" || true

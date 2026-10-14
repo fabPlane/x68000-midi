@@ -3,7 +3,8 @@
     /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 \\
         hw/tidy_board.py
 
-Runs after `hw/build_breakout.sh`. Two jobs it does better than a human would
+Runs after the board's build script, and takes the board as its one argument
+(`breakout` by default, or `logic`). Two jobs it does better than a human would
 enjoy doing by hand, and both are checkable by re-running DRC:
 
 * **Plane stubs.** `fix_planes.py` only drops a via where one already fits on
@@ -27,6 +28,16 @@ from pathlib import Path
 import pcbnew
 
 ROOT = Path(__file__).resolve().parent.parent
+
+#: Same per-board table as fix_planes.py, and for the same reason: the helpers
+#: read these as module globals.
+BOARDS = {
+    "breakout": dict(board="x68000-breakout.kicad_pcb", report="drc-all.json",
+                     planes={"GND", "+5V", "VREF"}, via=(0.6, 0.3)),
+    "logic": dict(board="x68000-logic.kicad_pcb", report="drc-logic.json",
+                  planes={"GND", "+3V3"}, via=(0.45, 0.25)),
+}
+
 BOARD = ROOT / "build" / "x68000-breakout.kicad_pcb"
 REPORT = ROOT / "build" / "drc-all.json"
 
@@ -84,9 +95,17 @@ class Copper:
         for fp in board.GetFootprints():
             for pad in fp.Pads():
                 p = pad.GetPosition()
+                b = pad.GetBoundingBox()
+                # Rectangle, plus the circle for the stub test, which measures
+                # from a point. A circle of radius max(w, h)/2 understates a
+                # square pad's corner, and understating clearance here puts
+                # DRC errors on the board.
                 r = max(to_mm(pad.GetSize().x), to_mm(pad.GetSize().y)) / 2
                 self.pads.append((to_mm(p.x), to_mm(p.y), r,
-                                  pad.GetNet().GetNetname()))
+                                  pad.GetNet().GetNetname(),
+                                  to_mm(b.GetLeft()), to_mm(b.GetTop()),
+                                  to_mm(b.GetRight()), to_mm(b.GetBottom()),
+                                  to_mm(pad.GetDrillSize().x) / 2))
         for t in board.Tracks():
             net = t.GetNet().GetNetname()
             if t.Type() == pcbnew.PCB_VIA_T:
@@ -100,8 +119,16 @@ class Copper:
 
     def via_fits(self, x, y, net) -> bool:
         r = VIA_D / 2 + CLEARANCE
-        for px, py, size, pnet in self.pads:
-            if pnet != net and (px - x) ** 2 + (py - y) ** 2 < (r + size) ** 2:
+        for px, py, size, pnet, x0, y0, x1, y1, drill in self.pads:
+            if drill > 0:
+                gap = ((px - x) ** 2 + (py - y) ** 2) ** 0.5
+                if gap < drill + VIA_DRILL / 2 + 0.3:
+                    return False
+            if pnet == net:
+                continue
+            dx = max(x0 - x, 0.0, x - x1)
+            dy = max(y0 - y, 0.0, y - y1)
+            if (dx * dx + dy * dy) ** 0.5 < r:
                 return False
         for vx, vy, size, vnet in self.vias:
             limit = r + size if vnet != net else VIA_DRILL + 0.5
@@ -114,7 +141,7 @@ class Copper:
 
     def stub_fits(self, a, b, net) -> bool:
         r = STUB_W / 2 + CLEARANCE
-        for px, py, size, pnet in self.pads:
+        for px, py, size, pnet, *_ in self.pads:
             if pnet != net and seg_distance((px, py), a, b) < r + size:
                 return False
         for vx, vy, size, vnet in self.vias:
@@ -241,7 +268,21 @@ def drop_unused_anchors(board) -> int:
     return len(doomed)
 
 
+def select(name: str) -> None:
+    global BOARD, REPORT, PLANE_NETS, VIA_D, VIA_DRILL
+    try:
+        cfg = BOARDS[name]
+    except KeyError:
+        raise SystemExit(f"unknown board {name!r}; "
+                         f"expected one of {', '.join(sorted(BOARDS))}")
+    BOARD = ROOT / "build" / cfg["board"]
+    REPORT = ROOT / "build" / cfg["report"]
+    PLANE_NETS = cfg["planes"]
+    VIA_D, VIA_DRILL = cfg["via"]
+
+
 def main() -> int:
+    select(sys.argv[1] if len(sys.argv) > 1 else "breakout")
     board = pcbnew.LoadBoard(str(BOARD))
     copper = Copper(board)
     added, failed = connect_plane_stubs(board, copper)

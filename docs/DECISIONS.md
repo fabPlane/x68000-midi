@@ -578,3 +578,390 @@ Two scripting bugs in two days on this board, both of the same kind — code tha
 reported success, and did the wrong thing. The via fence reported "93 plane vias" while walling the
 FPGA in; this reported "narrowed 97 pads" while leaving the gap alone. The guard that caught both was
 measuring the result rather than trusting the message.
+
+### 2026-10-13 — an outside opinion, and the four things it found
+
+The logic board had stalled at 19 unconnected items and one DRC error after four routing attempts,
+so the problem brief (`build/chatgpt-prompt.md`) went to **gpt-6.1-sol at medium reasoning effort**,
+driven through the `codex` CLI with read-only access to this repo. Every claim below was checked
+against the files before anything changed; all four held.
+
+| Finding | Check | Severity |
+|---|---|---|
+| **The exposed pad had almost no solder paste.** `make_qfn_footprint.py` resized *every* pad under 2 mm, and the source footprint carries nine unnumbered, paste-only 1.81 mm apertures over the thermal pad. They came out 0.22 x 1.81 — **8% coverage where the stencil intends 65%**. | Measured on the generated footprint. | Assembly defect. The FPGA's ground pad would barely have wetted. |
+| **Every via on the board was 0.6 mm.** `m_ViasMinSize`/`m_MinThroughDrill` were set to 0.45/0.25 but the *netclass* was left at its 0.6/0.3 default, and the netclass is what gets built. | Read back from the board. | 0.15 mm of extra radius everywhere; it is what turned the corridor past the MODE1 via into a clearance error the router could only answer by pinching a track to 0.112 mm. |
+| **The power planes did not reach their own pins.** The In4 three-way split assumed the FPGA's supplies were grouped by side. They are interleaved around one perimeter row: pin 12 (+1.8 V, the PSRAM's bank) sits at (35.2, 75.2), 12 mm west of where the 1.8 V stripe began, and **six of the seven +3.3 V pins lay over no 3.3 V copper at all**. | Pad-by-pad against the pour rectangles. | Every one of those pins had to cross the board on a signal layer to find its rail — a large part of the congestion being blamed on layer count. |
+| **The decoupling was placed by following rails.** `anchor_of()` took the first placed part sharing a net and added 8 mm. So all three regulators' bulk capacitors sat next to the FPGA, **75 mm from their regulators**, and the oscillator's and opto's decoupling with them. | Positions vs regulators. | A 100 nF on +3.3 V is wired identically wherever it sits; the netlist cannot say which device it serves, so the placer could not either. |
+
+It also caught that `make_qfn_footprint.py` was never invoked by `build_logic.sh` — the footprint
+only existed because it had been run by hand once.
+
+**What changed.** Paste apertures left alone (numbered pads 1-88 only, 65% coverage restored, with a
+hard check that exactly 88 pads were narrowed); netclass vias set to 0.45/0.25 and `add_via()` given
+parameters, since it read its own module globals; `Design.near` added so each capacitor states the
+part it belongs beside and `renumber()` carries it through, with the placer reading that in
+preference to guessing — worst cap-to-device distance is now 11 mm; U5 and U6 moved to the pins they
+feed and X1 to within 6 mm of clock pin 63; the footprint generator added to the pipeline.
+
+**And the power topology is no longer a three-way split.** Only the rail that is genuinely a plane
+gets one: In1 all ground, In2 all +3.3 V (six FPGA pins, both ribbons, the MIDI drivers, the opto,
+the oscillator). +1.8 V has one FPGA pin and +1.2 V has four, and with their regulators now adjacent
+they are ordinary routed nets. A 10 mm track from a neighbouring regulator beats a plane stripe that
+stops 12 mm short of the pad.
+
+That frees the board to be **four layers**, which is what this was for.
+
+**Still open.**
+
+- **The land geometry is still unverified.** The outside opinion gave Gowin's recommendation as
+  0.20 mm wide x 0.85 mm long on 9.90 mm opposing centres, against this footprint's 0.22 x 0.55 on
+  9.60 — the width is close but the length and ring position are inherited from KiCad's ArtInChip
+  pattern. Those figures could not be confirmed: `cdn.gowinsemi.com.cn` returns 403, no copy of
+  UG119 is in the repo, search did not turn one up, and there is no Gowin QFN-88 footprint anywhere
+  on this machine. **Pad length is a solder-joint reliability question on the expensive part, so it
+  needs the real drawing before fab, not a recollection of it.**
+- FPGA decoupling sits 7-11 mm out, because single-sided assembly keeps it outside the package
+  outline. Moving it to B.Cu directly under the supply pins would be better practice and costs a
+  second assembly setup.
+
+### 2026-10-13 — four layers, measured
+
+It routes. Every one of the sixty signals, on four layers: F.Cu signal, In1
+ground, In2 +3.3 V, B.Cu signal. 1398 tracks, all of them on the two outer
+layers — the router never touched the planes — and 274 vias, all at the
+0.25 mm drill the netclass now actually specifies.
+
+The sequence that got there, each line measured:
+
+| | signals unrouted | plane unconnected | DRC errors |
+|---|---|---|---|
+| six layers, the old power split | 1 | 18 | 1 |
+| four layers, planes reaching their pins | **0** | 25 | 2 |
+| + inward fanout and a via beside every plane pad, 14 mm stitch grid | 3 | 4 | 1 |
+| + 20 mm stitch grid | 1 | 3 | 1 |
+| + pour min-thickness 0.5 mm, region stitching, rectangular clearance | **0** | 4 | 3 |
+
+Two things are worth keeping from how that went.
+
+**The 14 mm stitch grid became an obstruction once every plane pad had its own
+via.** 143 vias on a 70 x 150 board cost three ribbon signals; at 20 mm the
+grid adds 54 instead of 74 and the signals came back. The grid's job is
+return-current stitching between the inner layers, and that does not need to be
+dense once the pads are individually connected.
+
+**The same bug was in four different clearance checks.** Every one of them
+modelled a pad as a circle of radius max(w, h)/2. That is close enough for the
+breakout's square-ish pads, which is why it survived a whole board, and it
+understates a square pad's corner by up to 41% of its half-width. In turn it
+rejected the entire QFN fanout ring (including each via's own pad), put a
+ground via 0.09 mm from the ribbon's 3.3 V pin, and put a 3.3 V via 0.145 mm
+from a 0603 ground pad. `route_breakout.via_clear`, `route_logic.ring_clear`,
+`fix_planes.Obstacles.room_for_via` and `tidy_board.Copper.via_fits` now all
+test against rectangles, and the two post-route passes check hole-to-hole as
+well, which none of them did.
+
+The guard that caught it was a DRC run on the board *before* routing. Eight
+errors that looked like the tidy pass's fault were in the pour script, and
+without that check they would have been debugged in the wrong file.
+
+**What is left**, and it is small and local:
+
+- Four unconnected items: C1's +3.3 V pad to its own via, two +3.3 V track
+  fragments, FPGA pad 24 (GND) to its via, and one region of the surface
+  ground pour. No signals.
+- Three clearance errors at 0.1444, 0.1444 and 0.1489 mm against the 0.15 mm
+  netclass — between 0.001 and 0.006 mm short, and all above JLCPCB's 0.127 mm
+  standard. They are around the FPGA's inward fanout ring, where the ring vias
+  were placed with exactly 0.15 mm of budget and the router then drew to 0.15
+  as well, leaving nothing for rounding.
+
+Both groups want a hand in pcbnew rather than another pipeline run: the last
+five runs each reshuffled *which* few local items fail without reducing the
+count, which is the point where the automation has stopped paying.
+
+### 2026-10-13 — the gateware, through synthesis for the first time
+
+48 simulation tests had been passing for days, but nothing had ever been near
+place-and-route: `yosys`, `nextpnr-himbaechel`, `gowin_pack` and `apycula` were
+all absent. That left three things unknown that could have invalidated the
+board, so they went first, before any more work on the BOM.
+
+Toolchain: YosysHQ's **oss-cad-suite** (2026-10-13, darwin-arm64), because the
+himbaechel gowin target is not in homebrew — only `nextpnr-ice40` is. It ships
+`chipdb-GW1N-9C.bin`, which is the GW1NR-9's die. `make synth` and `make pnr`
+in `gateware/` now do this repeatably.
+
+**It fits, with room to spare.** Against the GW1NR-9:
+
+| | used | available | |
+|---|---|---|---|
+| LUT4 | 2033 | 8640 | **23%** |
+| DFF | 516 | 6480 | 8% |
+| ALU | 308 | 6480 | 4% |
+| IOB | 53 | 276 | 19% |
+| BSRAM | **0** | 26 | none used at all |
+
+So the part is right-sized and there is no case for a bigger one: roughly 77%
+of the LUTs and every one of the 26 block RAMs are still free for the PSRAM
+controller and the 16-bit path.
+
+**Timing misses, narrowly.** 105.02 MHz against the 108 MHz the card runs at —
+2.8% short, 0.26 ns, and only three failing endpoints. The critical path is
+9.52 ns (4.20 logic, 5.32 routing) and ends at the bus slave's read-data
+register: everything the slave can return — the interrupt vector register, the
+YM3802 version string index, the core registers — funnels through one wide mux
+into `rdata_r` in a single cycle.
+
+Three ways out, in order of preference:
+
+1. **Pipeline the read path.** One more register stage before `rdata_r`. The
+   68000 bus is asynchronous and this slave already holds an honest ~DTACK, so
+   a cycle of extra read latency is free functionally. The mux is the problem,
+   not the clock.
+2. **54 MHz.** Still exact for MIDI (54e6/31250 = 1728, and 54e6 x 8 us = 432),
+   and halves the requirement. 108 was picked as 4x the oscillator; 2x still
+   samples the ~10 MHz bus about five times a cycle.
+3. Leave it. -C6 is the slower grade and 105 MHz is nextpnr's estimate, not
+   silicon — but shipping a design that fails its own constraint is not a
+   decision to make by default.
+
+Note the measurement used a **throwaway pinout**, written for this run only:
+53 signals onto the first 53 free user I/O, with the clock on its real pin 63.
+Routing is 56% of the critical path, so a real pinout that keeps the data bus
+together could move the number either way.
+
+**What synthesis also made plain: there is no board-level wrapper.** `Card` is
+the core, not a top level for this board. To get a bitstream it still needs:
+
+- **Bidirectional data pins.** `Card` has separate `data_i`/`data_o`/`data_oe`;
+  the board has one pin per data line through the breakout's translators.
+- **A PLL.** The board has a 27 MHz oscillator and the design wants 108. None
+  is instantiated. Pin 63 was already fixed to IOR5A/RPLL_T_in in
+  `hw/netlist.py` for exactly this, so the board side is ready.
+- **Reset** from HEXRESET_N, and something for the pins the core does not yet
+  use: HD8-15, HUDS_N, F_RX (MIDI IN), F_DIP1-4, F_LED.
+
+None of that invalidates the board. The card is deliberately staged — the
+docstring has said so all along: the 8 MB window "lands here when its PSRAM
+controller does" — and the board carries the full pinout waiting for it. Worth
+recording, though, that **53 of Card's port bits already exceed the 48 user I/O
+in the two 3.3 V banks**, which is independent confirmation that putting
+A1-A15 in bank 3 at 1.8 V was not optional.
+
+### 2026-10-14 — the BOM, and two parts that cannot be bought
+
+Both boards now carry an LCSC number for every part the assembler fits, read
+off the JLCPCB or LCSC part page rather than recalled. Getting there changed
+four parts and one package, and two of those were not optional.
+
+**The 1.8 V and 1.2 V regulators did not exist.** `AP2127K-1.8TRG1` and
+`-1.2TRG1` are on no LCSC listing at all; Future shows zero global stock on the
+1.8 V part against a 16-week factory lead and a 3000 minimum, and RS have
+discontinued it. The replacement came from Sipeed's own Tang Nano 9K schematic,
+which runs the same GW1NR-9: its 1.2 V core is an **ME6211C12** in SOT-23-5.
+That family covers all three voltages in the footprint already on the board,
+with the same pinout (VIN/GND/CE/NC/VOUT), so it is a drop-in:
+
+| | part | LCSC | |
+|---|---|---|---|
+| U5 | ME6211C18M5G-N | C236671 | 1.8 V, 300 mA |
+| U6 | ME6211C12M5G-N | C236672 | 1.2 V, 300 mA |
+
+**The 3.3 V regulator could not stay in a SOT-23-5.** It feeds the other two,
+so it carries the whole board:
+
+| rail | load | from | drop | dissipated |
+|---|---|---|---|---|
+| +1.2 V core | ~80 mA | 3.3 V | 2.1 V | 0.17 W in U6 |
+| +1.8 V bank 3 + PSRAM | ~80 mA | 3.3 V | 1.5 V | 0.12 W in U5 |
+| +3.3 V own loads | ~95 mA | — | — | — |
+| **+3.3 V total** | **~255 mA** | 5 V slot | 1.7 V | **0.43 W in U4** |
+
+A SOT-23-5 is around 150-250 K/W, so 0.43 W is 65-110 K of rise — inside a
+closed case, on the slower temperature grade. **U4 is now an AMS1117-3.3 in
+SOT-223** (C6186, a JLCPCB *Basic* part, 1 A), whose 2.0 x 3.8 mm tab brings
+that to roughly 25 K. It has no enable pin, hence the new `LDO3` part kind.
+The currents above are estimates with margin, not measurements; the point is
+the order of magnitude, and SOT-23-5 loses on any of them.
+
+**The 74LVC2G07 is not stocked in SOT-363.** The only small-package 74LVC2G07
+on LCSC is X2-DFN1409-6. What is stocked is `SN74LVC2G07DBVR` (C37708, TI,
+27k pieces) in **SOT-23-6** — identical pinout, and 0.95 mm pitch is kinder to
+assemble than 0.65. That changes the footprint on *both* boards, so the
+breakout has to be re-routed too, which is annoying but not arguable: a
+footprint you cannot buy a part for is not a footprint.
+
+**The breakout's direction buffer needed care.** The 74AHCT1G34 is not stocked
+either, and here the family is the specification, not an implementation detail:
+the 8T245's DIR pin is referenced to the slot's 5 V, so a 5 V *CMOS* input
+wants 3.5 V to read a one and the host only offers 3.3. AHCT's TTL thresholds
+are the entire reason that part is on the board. `SN74AHCT1G125` (C7484) is the
+same family and package and becomes a plain buffer with ~OE tied low. An
+LVC1G34 would have been a well-stocked functional bug.
+
+**One part carries known risk.** `SN74LVC8T245PWR` (C27643) is marked
+"not recommended for new designs" and JLCPCB's stock reads zero about as often
+as not — and there are six per board. The mitigation is that TI's successor,
+`SN74LV8T245PWR`, is the same TSSOP-24: if it has gone at order time that is a
+BOM edit, not a board change.
+
+**What the assembler does not fit.** The rule is that a part goes to JLCPCB
+only if its footprint *on this board* has been checked against the part you can
+actually buy. Everything through-hole fails that by definition here, and so
+does the 1.27 mm JTAG header, whose land pattern has not been checked against
+C5160761. So J1-J6, SW1 and U3 on the logic board, and J2/J3 on the breakout,
+are marked `hand`: they stay on the board and in the netlist and come off the
+CPL. For five boards that is minutes of soldering, and it removes the whole
+class of "the footprint did not match the part".
+
+`hw/make_fab.py <board>` now writes the gerbers, drill, BOM, CPL and the
+hand-solder list, taking part numbers from the netlist and positions from the
+routed board — deliberately two sources, so a mismatch shows up rather than
+being copied. It also prints the parts whose rotation matters, because KiCad's
+rotation convention is not JLCPCB's and only their order preview is
+authoritative on that.
+
+### 2026-10-14 — the two boards would have shorted the 1.8 V rail
+
+Both boards passed every check they had. The pair did not.
+
+`hw/breakout.py`'s `header()` laid a ground on every pin congruent to 3 mod 5 —
+**pin 3 among them** — and VREF_LOW, the 1.8 V the A1-A15 translators need
+because those lines land in the GW1NR-9's bank 3, never reached the ribbon at
+all. It existed only behind JP2, a DNP link down from VREF.
+
+`hw/logic.py` meanwhile wires its own 1.8 V regulator's **output** to pin 3 of
+both ribbons, which is exactly right: the logic board is the host, so it
+sources the rail the breakout's B side runs at.
+
+Plug the two together and U5's output meets a ground pin. No bank 3 I/O, no
+PSRAM, and a regulator into a dead short.
+
+Nothing on either board could see it. `check()` validates one netlist: every
+net has two or more nodes, every FPGA pin is a real user I/O in a bank at the
+right voltage, every supply pin is connected. All true on both boards, and
+irrelevant — the fault lives in the gap between them, and the gap had no owner.
+
+Fixed: pin 3 is VREF_LOW, and the grounds move to every pin ≡ 3 mod 5 from 8
+upwards. The count still works out — 28 signal slots against J2's 28 signals,
+exactly — which is its own small warning about how little slack there was.
+
+`hw/check_mating.py` now compares the two headers pin by pin and both build
+scripts run it before placement. Supply nets are allowed to differ in *name*
+across the connector, because each board names its rails from its own point of
+view, but the aliases are listed explicitly rather than matched by pattern, so
+a pair that merely looks like an alias still fails.
+
+**Still a build step, not a fix:** the logic board's only power input is pin 2,
+and on the breakout that pin is live only when **JP3** is fitted. JP3 is DNP on
+purpose — a header pin carrying 5 V by default is a trap for a 3.3 V host, and
+Sipeed warn that 5 V on a Tang Console's headers destroys it. That deliberate
+choice stands, so for our own pair JP3 has to be fitted by hand. It is in the
+hand-solder list for that reason and not because anything is wrong with it.
+
+### 2026-10-14 — the ribbon header's pads were the bottleneck
+
+Swapping the 3.3 V regulator to a SOT-223 made the logic board route *worse*,
+and badly: freerouting shorted **HD2 to HD3** inside J1's pad field, left
+HA18, ~AS, ~EXRESET and ~IRQ2 unrouted, scattered a few degenerate 0.0001 mm
+segments about, and took 1204 seconds to do it.
+
+It was not the regulator. Every one of those faults was inside the ribbon
+header's pads, and the measurement explains why:
+
+    KiCad IDC-Header_2x20_P2.54mm_Horizontal: 1.70 mm pads on 2.54 mm
+      -> 0.84 mm between neighbours
+    two tracks at 0.15 mm with 0.15 mm clearance need 0.75 mm
+      -> 0.09 mm of slack, in the one place fifty-five signals must get past
+
+An IDC post is 0.64 mm square, so 1.70 mm was simply generous.
+`hw/make_idc_footprint.py` derives a 1.40 mm land on the same 1.00 mm drill —
+a 0.20 mm annular ring against JLCPCB's 0.13 mm minimum — which opens the gap
+to **1.14 mm**, enough for three tracks instead of two-and-a-bit.
+
+| | 1.70 mm pads | 1.40 mm pads |
+|---|---|---|
+| shorts | 1 (HD2–HD3) | **0** |
+| signals unrouted | 4 | **0** |
+| DRC errors | 9 | 3 |
+| unconnected | 7 | 3 → 2 |
+| autoroute | 1204 s | **345 s** |
+
+The time is the tell: a router that takes three and a half times as long and
+produces a short is not being asked a harder question, it is being asked an
+unreasonable one.
+
+Also fixed along the way: the JVM had no heap bound, and on one run grew to
+9.3 GB and spent twenty-one minutes at 11% CPU in GC without finishing. Both
+build scripts now pass `-Xmx6g`; the runs that complete peak near 1.6 GB.
+
+**Where the logic board stands.** Four layers, 1171 tracks, every one of the
+sixty signals routed, and a complete fab package in `build/fab/logic/`:
+gerbers for all four copper layers with masks, paste, silkscreens, edge cuts
+and drill; a 14-line BOM with an LCSC number on every line; a 35-part CPL; and
+the hand-solder list.
+
+Two things are left, and both want a person in pcbnew rather than another
+pipeline run:
+
+1. **Two unconnected plane items**, both inside the FPGA's escape annulus,
+   which is the densest copper on the board: a GND track at (36.2, 79.8) that
+   does not reach the ring via at (36.0, 79.8), and C1's +3.3 V pad at
+   (39.2, 82.0) that does not reach its via at (36.7, 79.0). `close_gaps.py`
+   tries a straight run, two L-shapes and two 45-degree dog-legs on each outer
+   layer and none of the ten fits; what they want is a via hop, which is a
+   two-minute job by hand and not worth another pass of code.
+2. **Three clearances at 0.1444, 0.1456 and 0.1472 mm** against the 0.15 mm
+   netclass — between three and six *microns* short, and all comfortably above
+   JLCPCB's 0.127 mm capability. They are manufacturable as they stand; they
+   violate our own stricter rule, not the fab's.
+
+### 2026-10-14 — where both boards actually stand
+
+| | breakout | logic |
+|---|---|---|
+| layers | 4 | 4 |
+| size | 69 x 150 mm | 70 x 150 mm |
+| tracks | 1453 | 1171 |
+| signals unrouted | **0** | **0** |
+| DRC errors | **0** | 3 |
+| unconnected | 5 | 3 |
+| BOM lines, all with an LCSC number | 6 | 14 |
+| parts the assembler fits | 27 | 35 |
+| parts we fit | 2 (+4 DNP) | 7 (+1 DNP) |
+
+Fab packages are in `build/fab/breakout/` and `build/fab/logic/`: gerbers for
+all four copper layers with masks, paste, silkscreens and edge cuts, Excellon
+drill with its map, BOM, CPL, and the hand-solder list with a reason on every
+line.
+
+**What is not finished**, stated plainly because the rest of this file would be
+worth less if this part were vague:
+
+* **Eight plane connections across the two boards** (five on the breakout,
+  three on the logic board), every one of them on +5 V, +3.3 V or ground, and
+  no signals. On the logic board they are FPGA pad 24's ground to its ring via
+  1.02 mm away, C1's +3.3 V pad to its via, and two +3.3 V fragments near the
+  MIDI side. `close_gaps.py` tries ten paths per gap — straight, two L-shapes
+  and two 45-degree dog-legs on each outer layer — and these need a via hop
+  through congested copper, which is a few minutes with pcbnew's via tool.
+  Closing one re-partitions the net and surfaces another, which is the point at
+  which the automation stopped paying.
+* **Three clearances on the logic board at 0.1444, 0.1456 and 0.1472 mm**
+  against the 0.15 mm netclass. Three to six microns short of *our* rule and
+  well inside JLCPCB's 0.127 mm capability.
+* **The gateware has no board-level top.** `Card` is the core. A bitstream
+  needs bidirectional data pins, a PLL from the 27 MHz oscillator, and reset
+  from HEXRESET_N; and the PSRAM controller, the 16-bit path, MIDI IN, the DIP
+  switches and the LED are all still to come. It fits comfortably — 23% of the
+  LUTs, none of the 26 block RAMs — but it has not closed 108 MHz: 105.02 MHz
+  before the read-mux fix, 101.83 after, both on a throwaway pinout where
+  routing is two thirds of the critical path. That number cannot be trusted
+  either way until the real pinout exists.
+* **The cover plate's absolute registration is unverified.** Pitch and order
+  match the board exactly (22 mm, OUT / OUT 2 / IN mapping onto plate x 56.01 /
+  78.01 / 100.01), but the offset to the slot datum wants a printed plate and
+  the real card.
+* **Nothing has been in a slot.** The edge-finger geometry is still midiori's,
+  copied and never tested in an X68000, and the hard gold and 45 degree bevel
+  are order notes that do not appear in any gerber.
